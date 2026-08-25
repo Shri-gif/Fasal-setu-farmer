@@ -1,0 +1,6 @@
+{
+  "name": "Khet2Ghar - Farmer Dashboard",
+  "description": "Farmer management portal for Khet2Ghar: products, inventory, orders, earnings, and profile.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
