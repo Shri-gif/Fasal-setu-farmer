@@ -22,14 +22,17 @@ import { CodeAuditModal } from './components/CodeAuditModal';
 
 export default function App() {
   // ------------------------------------------------
-  // NAVIGATION
+  // Navigation
   // ------------------------------------------------
 
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const [editProductId, setEditProductId] = useState<string | null>(null);
+  const [currentTab, setCurrentTab] =
+    useState<string>('dashboard');
+
+  const [editProductId, setEditProductId] =
+    useState<string | null>(null);
 
   // ------------------------------------------------
-  // AUTHENTICATION
+  // Authentication & Profiles
   // ------------------------------------------------
 
   const [isAuthenticated, setIsAuthenticated] =
@@ -38,10 +41,6 @@ export default function App() {
   const [isLiveConnected, setIsLiveConnected] =
     useState<boolean>(false);
 
-  // ------------------------------------------------
-  // PROFILES
-  // ------------------------------------------------
-
   const [userProfile, setUserProfile] =
     useState<UserProfile>({} as UserProfile);
 
@@ -49,7 +48,7 @@ export default function App() {
     useState<FarmerProfile>({} as FarmerProfile);
 
   // ------------------------------------------------
-  // DATA
+  // Data Store
   // ------------------------------------------------
 
   const [categories, setCategories] =
@@ -62,7 +61,7 @@ export default function App() {
     useState<Order[]>([]);
 
   // ------------------------------------------------
-  // UI STATE
+  // UI state
   // ------------------------------------------------
 
   const [isAuditModalOpen, setIsAuditModalOpen] =
@@ -72,7 +71,7 @@ export default function App() {
     useState<string | null>(null);
 
   // ------------------------------------------------
-  // TOAST
+  // Toast Helper
   // ------------------------------------------------
 
   const showToast = (msg: string) => {
@@ -84,16 +83,16 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // COMPLETE SUPABASE SYNC
+  // Sync with Supabase
   // ------------------------------------------------
 
   const syncWithSupabase = async () => {
     try {
       setIsLiveConnected(false);
 
-      // ------------------------------------------------
-      // 1. CHECK AUTH SESSION
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 1. Check authenticated Supabase session
+      // ----------------------------------------------
 
       const {
         data: sessionData,
@@ -106,9 +105,9 @@ export default function App() {
 
       const authUser = sessionData.session?.user;
 
-      // ------------------------------------------------
-      // NO LOGGED-IN USER
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // No authenticated user
+      // ----------------------------------------------
 
       if (!authUser) {
         setIsAuthenticated(false);
@@ -124,15 +123,11 @@ export default function App() {
         return;
       }
 
-      // ------------------------------------------------
-      // USER IS AUTHENTICATED
-      // ------------------------------------------------
-
       setIsAuthenticated(true);
 
-      // ------------------------------------------------
-      // 2. USER PROFILE
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 2. Load user profile
+      // ----------------------------------------------
 
       const {
         data: profileData,
@@ -179,9 +174,9 @@ export default function App() {
 
       setUserProfile(actualUser);
 
-      // ------------------------------------------------
-      // 3. FARMER PROFILE
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 3. Load farmer profile
+      // ----------------------------------------------
 
       const {
         data: farmerData,
@@ -196,7 +191,7 @@ export default function App() {
         throw farmerError;
       }
 
-      // Farmer profile doesn't exist
+      // No farmer profile
       if (!farmerData) {
         setFarmerProfile({
           user_id: authUser.id,
@@ -208,16 +203,18 @@ export default function App() {
 
         setIsLiveConnected(true);
 
-        showToast('Farmer profile not found yet.');
+        showToast(
+          'Farmer profile not found yet.'
+        );
 
         return;
       }
 
       setFarmerProfile(farmerData);
 
-      // ------------------------------------------------
-      // 4. PRODUCT CATEGORIES
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 4. Load product categories
+      // ----------------------------------------------
 
       const {
         data: categoryData,
@@ -234,25 +231,29 @@ export default function App() {
       }
 
       setCategories(
-        (categoryData || []).map((category: any) => ({
-          id: category.id,
+        (categoryData || []).map(
+          (category: any) => ({
+            id: category.id,
 
-          name:
-            category.name ||
-            category.title ||
-            category.category_name ||
-            category.slug ||
-            'Category',
+            name:
+              category.name ||
+              category.title ||
+              category.category_name ||
+              category.slug ||
+              'Category',
 
-          slug: category.slug || '',
+            slug:
+              category.slug || '',
 
-          icon: category.icon || '🌱',
-        }))
+            icon:
+              category.icon || '🌱',
+          })
+        )
       );
 
-      // ------------------------------------------------
-      // 5. FARMER PRODUCTS ONLY
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 5. Load ONLY this farmer's products
+      // ----------------------------------------------
 
       const {
         data: productData,
@@ -260,7 +261,10 @@ export default function App() {
       } = await supabase
         .from('products')
         .select('*')
-        .eq('farmer_id', farmerData.id)
+        .eq(
+          'farmer_id',
+          farmerData.id
+        )
         .order('created_at', {
           ascending: false,
         });
@@ -269,11 +273,13 @@ export default function App() {
         throw productError;
       }
 
-      setProducts(productData || []);
+      setProducts(
+        productData || []
+      );
 
-      // ------------------------------------------------
-      // 6. FARMER ORDERS ONLY
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // 6. Load ONLY this farmer's orders
+      // ----------------------------------------------
 
       const {
         data: orderData,
@@ -281,7 +287,10 @@ export default function App() {
       } = await supabase
         .from('orders')
         .select('*')
-        .eq('farmer_id', farmerData.id)
+        .eq(
+          'farmer_id',
+          farmerData.id
+        )
         .order('created_at', {
           ascending: false,
         });
@@ -290,15 +299,19 @@ export default function App() {
         throw orderError;
       }
 
-      setOrders(orderData || []);
+      setOrders(
+        orderData || []
+      );
 
-      // ------------------------------------------------
-      // SYNC COMPLETE
-      // ------------------------------------------------
+      // ----------------------------------------------
+      // Sync complete
+      // ----------------------------------------------
 
       setIsLiveConnected(true);
 
-      showToast('Supabase data synchronized ✓');
+      showToast(
+        'Supabase data synchronized ✓'
+      );
 
     } catch (error: any) {
       console.error(
@@ -306,9 +319,7 @@ export default function App() {
         error
       );
 
-      // IMPORTANT:
-      // Never restore demo/mock data.
-
+      // Never use demo/mock data.
       setCategories([]);
       setProducts([]);
       setOrders([]);
@@ -323,7 +334,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // INITIAL AUTH + SUPABASE LISTENER
+  // Initial Auth + Supabase listener
   // ------------------------------------------------
 
   useEffect(() => {
@@ -337,7 +348,6 @@ export default function App() {
 
     initializeAuth();
 
-    // Listen for login/logout/session changes
     const {
       data: authListener,
     } = supabase.auth.onAuthStateChange(
@@ -350,8 +360,13 @@ export default function App() {
           setIsAuthenticated(false);
           setIsLiveConnected(false);
 
-          setUserProfile({} as UserProfile);
-          setFarmerProfile({} as FarmerProfile);
+          setUserProfile(
+            {} as UserProfile
+          );
+
+          setFarmerProfile(
+            {} as FarmerProfile
+          );
 
           setCategories([]);
           setProducts([]);
@@ -367,17 +382,16 @@ export default function App() {
   }, []);
 
   // ------------------------------------------------
-  // FINANCIAL COMPUTATIONS
+  // Financial Computations
   // ------------------------------------------------
 
   const totalEarnings = orders
     .filter((o) => {
-      const status =
-        (
-          o.order_status ||
-          o.status ||
-          ''
-        ).toLowerCase();
+      const status = (
+        o.order_status ||
+        o.status ||
+        ''
+      ).toLowerCase();
 
       return (
         status === 'completed' ||
@@ -403,24 +417,24 @@ export default function App() {
 
   const monthlyEarnings = orders
     .filter((o) => {
-      const status =
-        (
-          o.order_status ||
-          o.status ||
-          ''
-        ).toLowerCase();
+      const status = (
+        o.order_status ||
+        o.status ||
+        ''
+      ).toLowerCase();
 
-      const date = new Date(
-        o.created_at
-      );
+      const date =
+        new Date(o.created_at);
 
       return (
         (
           status === 'completed' ||
           status === 'delivered'
         ) &&
-        date.getMonth() === currentMonth &&
-        date.getFullYear() === currentYear
+        date.getMonth() ===
+          currentMonth &&
+        date.getFullYear() ===
+          currentYear
       );
     })
     .reduce(
@@ -435,7 +449,7 @@ export default function App() {
     );
 
   // ------------------------------------------------
-  // NAVIGATION
+  // Navigation
   // ------------------------------------------------
 
   const handleNavigate = (
@@ -444,7 +458,9 @@ export default function App() {
   ) => {
     if (productId) {
       setEditProductId(productId);
-    } else if (tab === 'add-product') {
+    } else if (
+      tab === 'add-product'
+    ) {
       setEditProductId(null);
     }
 
@@ -457,16 +473,16 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // SAVE PRODUCT
+  // Save Product
   // ------------------------------------------------
 
   const handleSaveProduct = async (
     productData: Partial<Product>
   ): Promise<boolean> => {
     try {
-      // ---------------------------------------------
-      // UPDATE EXISTING PRODUCT
-      // ---------------------------------------------
+      // ----------------------------------------------
+      // Update existing product
+      // ----------------------------------------------
 
       if (productData.id) {
         const {
@@ -479,7 +495,10 @@ export default function App() {
             updated_at:
               new Date().toISOString(),
           })
-          .eq('id', productData.id)
+          .eq(
+            'id',
+            productData.id
+          )
           .eq(
             'farmer_id',
             farmerProfile.id
@@ -493,7 +512,8 @@ export default function App() {
 
         setProducts((prev) =>
           prev.map((product) =>
-            product.id === productData.id
+            product.id ===
+            productData.id
               ? data
               : product
           )
@@ -506,9 +526,9 @@ export default function App() {
         return true;
       }
 
-      // ---------------------------------------------
-      // CREATE NEW PRODUCT
-      // ---------------------------------------------
+      // ----------------------------------------------
+      // Create new product
+      // ----------------------------------------------
 
       if (!farmerProfile.id) {
         throw new Error(
@@ -573,7 +593,9 @@ export default function App() {
         error,
       } = await supabase
         .from('products')
-        .insert([newProductData])
+        .insert([
+          newProductData,
+        ])
         .select()
         .single();
 
@@ -610,7 +632,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // DELETE PRODUCT
+  // Delete Product
   // ------------------------------------------------
 
   const handleDeleteProduct = async (
@@ -622,7 +644,10 @@ export default function App() {
       } = await supabase
         .from('products')
         .delete()
-        .eq('id', productId)
+        .eq(
+          'id',
+          productId
+        )
         .eq(
           'farmer_id',
           farmerProfile.id
@@ -635,7 +660,8 @@ export default function App() {
       setProducts((prev) =>
         prev.filter(
           (product) =>
-            product.id !== productId
+            product.id !==
+            productId
         )
       );
 
@@ -657,7 +683,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // TOGGLE PRODUCT AVAILABILITY
+  // Toggle Product Availability
   // ------------------------------------------------
 
   const handleToggleAvailability = async (
@@ -671,9 +697,13 @@ export default function App() {
       } = await supabase
         .from('products')
         .update({
-          is_available: !current,
+          is_available:
+            !current,
         })
-        .eq('id', productId)
+        .eq(
+          'id',
+          productId
+        )
         .eq(
           'farmer_id',
           farmerProfile.id
@@ -687,7 +717,8 @@ export default function App() {
 
       setProducts((prev) =>
         prev.map((product) =>
-          product.id === productId
+          product.id ===
+          productId
             ? data
             : product
         )
@@ -715,7 +746,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // QUICK STOCK UPDATE
+  // Quick Stock Update
   // ------------------------------------------------
 
   const handleQuickUpdateStock = async (
@@ -731,7 +762,10 @@ export default function App() {
         .update({
           stock: newStock,
         })
-        .eq('id', productId)
+        .eq(
+          'id',
+          productId
+        )
         .eq(
           'farmer_id',
           farmerProfile.id
@@ -745,7 +779,8 @@ export default function App() {
 
       setProducts((prev) =>
         prev.map((product) =>
-          product.id === productId
+          product.id ===
+          productId
             ? data
             : product
         )
@@ -769,7 +804,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // UPDATE ORDER STATUS
+  // Update Order Status
   // ------------------------------------------------
 
   const handleUpdateOrderStatus = async (
@@ -777,20 +812,21 @@ export default function App() {
     newStatus: string
   ) => {
     try {
-      const updateData = {
-        order_status: newStatus,
-        status: newStatus,
-        updated_at:
-          new Date().toISOString(),
-      };
-
       const {
         data,
         error,
       } = await supabase
         .from('orders')
-        .update(updateData)
-        .eq('id', orderId)
+        .update({
+          order_status:
+            newStatus,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          'id',
+          orderId
+        )
         .eq(
           'farmer_id',
           farmerProfile.id
@@ -804,8 +840,12 @@ export default function App() {
 
       setOrders((prev) =>
         prev.map((order) =>
-          order.id === orderId
-            ? data
+          order.id ===
+          orderId
+            ? {
+                ...order,
+                ...data,
+              }
             : order
         )
       );
@@ -828,7 +868,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // SAVE USER PROFILE
+  // Save User Profile
   // ------------------------------------------------
 
   const handleSaveUserProfile = async (
@@ -885,7 +925,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // SAVE FARMER PROFILE
+  // Save Farmer Profile
   // ------------------------------------------------
 
   const handleSaveFarmerProfile = async (
@@ -946,7 +986,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // LOGIN
+  // Login
   // ------------------------------------------------
 
   const handleAuthLogin = async (
@@ -968,8 +1008,6 @@ export default function App() {
         };
       }
 
-      // Auth listener will perform
-      // complete Supabase synchronization.
       await syncWithSupabase();
 
       return {
@@ -987,7 +1025,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // SIGNUP
+  // Signup
   // ------------------------------------------------
 
   const handleAuthSignup = async (
@@ -1010,8 +1048,6 @@ export default function App() {
         };
       }
 
-      // If email confirmation is enabled,
-      // there may be no active session yet.
       if (data.session?.user) {
         await syncWithSupabase();
 
@@ -1037,7 +1073,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // LOGOUT
+  // Logout
   // ------------------------------------------------
 
   const handleLogout = async () => {
@@ -1086,7 +1122,7 @@ export default function App() {
   };
 
   // ------------------------------------------------
-  // LOGIN SCREEN
+  // Login Screen
   // ------------------------------------------------
 
   if (!isAuthenticated) {
@@ -1094,27 +1130,26 @@ export default function App() {
       <LoginModal
         onLogin={handleAuthLogin}
         onSignup={handleAuthSignup}
-        onQuickDemoLogin={() => {
+        onQuickDemoLogin={() =>
           showToast(
             'Demo login is disabled. Please use your Supabase account.'
-          );
-        }}
+          )
+        }
       />
     );
   }
 
   // ------------------------------------------------
-  // PENDING ORDERS
+  // Pending Orders
   // ------------------------------------------------
 
   const pendingOrdersCount =
     orders.filter((order) => {
-      const status =
-        (
-          order.order_status ||
-          order.status ||
-          ''
-        ).toLowerCase();
+      const status = (
+        order.order_status ||
+        order.status ||
+        ''
+      ).toLowerCase();
 
       return (
         status === 'pending' ||
@@ -1123,7 +1158,7 @@ export default function App() {
     }).length;
 
   // ------------------------------------------------
-  // MAIN APP
+  // Main App
   // ------------------------------------------------
 
   return (
@@ -1184,7 +1219,7 @@ export default function App() {
 
         </div>
 
-        {/* Main Content */}
+        {/* Main Content View Switcher */}
 
         <main className="max-w-5xl mx-auto px-4 pt-6 pb-20">
 
@@ -1194,13 +1229,17 @@ export default function App() {
             <DashboardView
               products={products}
               orders={orders}
-              totalEarnings={totalEarnings}
-              monthlyEarnings={monthlyEarnings}
+              totalEarnings={
+                totalEarnings
+              }
+              monthlyEarnings={
+                monthlyEarnings
+              }
               farmerName={
-                userProfile.full_name || ''
+                userProfile.full_name
               }
               farmName={
-                farmerProfile.farm_name || ''
+                farmerProfile.farm_name
               }
               onNavigate={
                 handleNavigate
@@ -1313,7 +1352,7 @@ export default function App() {
 
       </div>
 
-      {/* Persistent Bottom Navigation */}
+      {/* Persistent Bottom Mobile Navigation */}
 
       <BottomNav
         currentTab={currentTab}
@@ -1325,7 +1364,7 @@ export default function App() {
         }
       />
 
-      {/* Toast */}
+      {/* Floating Toast Notification */}
 
       {toastMessage && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-bounce">
@@ -1339,7 +1378,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Code Audit Modal */}
+      {/* Code Audit and Correction Report Modal */}
 
       <CodeAuditModal
         isOpen={
