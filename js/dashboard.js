@@ -2,6 +2,7 @@
    KHET2GHAR FARMER SITE
    dashboard.js
    REAL SUPABASE DASHBOARD
+   ORDERS + EARNINGS FIX
    ========================================================= */
 
 import { supabase } from "./supabase.js";
@@ -19,6 +20,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadDashboard();
 });
 
+
+/* =========================================================
+   LOAD DASHBOARD
+   ========================================================= */
+
 async function loadDashboard() {
     try {
         const {
@@ -26,72 +32,69 @@ async function loadDashboard() {
             error: userError
         } = await supabase.auth.getUser();
 
-        if (userError) throw userError;
+        if (userError) {
+            throw userError;
+        }
 
         if (!user) {
             window.location.href = "index.html";
             return;
         }
 
-        const {
-            data: farmer,
-            error: farmerError
-        } = await supabase
+        /* -----------------------------------------------
+           FIND FARMER PROFILE
+        ------------------------------------------------ */
+
+        const { data: farmer, error: farmerError } = await supabase
             .from("farmers")
             .select("id")
             .eq("user_id", user.id)
             .maybeSingle();
 
-        if (farmerError) throw farmerError;
+        if (farmerError) {
+            throw farmerError;
+        }
 
         if (!farmer) {
-            console.warn(
-                "Farmer profile not found. Displaying empty dashboard."
-            );
-
-            dashboardData.products = [];
-            dashboardData.orders = [];
-            dashboardData.earnings = 0;
-
-            updateStats();
-            displayRecentOrders();
+            console.warn("Farmer profile not found.");
             return;
         }
 
         currentFarmer = farmer;
 
-        await Promise.all([
-            loadProducts(),
-            loadOrders()
-        ]);
+        /* -----------------------------------------------
+           LOAD PRODUCTS FIRST
+           Orders depend on farmer's products
+        ------------------------------------------------ */
+
+        await loadProducts();
+
+        /* -----------------------------------------------
+           LOAD ORDERS
+        ------------------------------------------------ */
+
+        await loadOrders();
+
+        /* -----------------------------------------------
+           UPDATE DASHBOARD
+        ------------------------------------------------ */
 
         updateStats();
         displayRecentOrders();
 
     } catch (error) {
-        console.error(
-            "Dashboard loading error:",
-            error
-        );
+        console.error("Dashboard loading error:", error);
     }
 }
 
 
 /* =========================================================
-   LOAD PRODUCTS
+   LOAD FARMER PRODUCTS
    ========================================================= */
 
 async function loadProducts() {
     try {
-        if (!currentFarmer?.id) {
-            dashboardData.products = [];
-            return;
-        }
-
-        const {
-            data,
-            error
-        } = await supabase
+        const { data, error } = await supabase
             .from("products")
             .select(`
                 id,
@@ -105,250 +108,167 @@ async function loadProducts() {
             `)
             .eq("farmer_id", currentFarmer.id);
 
-        if (error) throw error;
+        if (error) {
+            throw error;
+        }
 
         dashboardData.products = data || [];
 
     } catch (error) {
-        console.error(
-            "Products loading error:",
-            error
-        );
-
+        console.error("Products loading error:", error);
         dashboardData.products = [];
     }
 }
 
 
 /* =========================================================
-   LOAD ORDERS
+   LOAD FARMER ORDERS
    ========================================================= */
 
 async function loadOrders() {
     try {
-        if (!currentFarmer?.id) {
+        if (!currentFarmer) {
             dashboardData.orders = [];
             dashboardData.earnings = 0;
             return;
         }
 
-        /*
-         * ---------------------------------------------------
-         * STEP 1
-         * Get all products belonging to the logged-in farmer.
-         *
-         * This gives us the product IDs that belong to this
-         * farmer.
-         * ---------------------------------------------------
-         */
+        let allOrders = [];
 
-        const {
-            data: farmerProducts,
-            error: farmerProductsError
-        } = await supabase
-            .from("products")
-            .select("id")
-            .eq("farmer_id", currentFarmer.id);
+        /* -------------------------------------------------
+           METHOD 1
+           Try direct farmer_id relationship
+        ------------------------------------------------- */
 
-        if (farmerProductsError) {
-            throw farmerProductsError;
-        }
+        try {
+            const {
+                data: farmerOrders,
+                error: farmerOrdersError
+            } = await supabase
+                .from("orders")
+                .select("*")
+                .eq("farmer_id", currentFarmer.id)
+                .order("created_at", { ascending: false });
 
-        const productIds = (farmerProducts || [])
-            .map(product => product.id)
-            .filter(Boolean);
-
-
-        /*
-         * ---------------------------------------------------
-         * STEP 2
-         * First try the normal farmer_id relationship.
-         *
-         * New orders should contain farmer_id.
-         * ---------------------------------------------------
-         */
-
-        let orders = [];
-
-        const {
-            data: farmerOrders,
-            error: farmerOrdersError
-        } = await supabase
-            .from("orders")
-            .select("*")
-            .eq("farmer_id", currentFarmer.id)
-            .order("created_at", {
-                ascending: false
-            });
-
-        if (!farmerOrdersError) {
-            orders = farmerOrders || [];
-        } else {
+            if (!farmerOrdersError && Array.isArray(farmerOrders)) {
+                allOrders.push(...farmerOrders);
+            }
+        } catch (error) {
             console.warn(
-                "Orders by farmer_id failed:",
-                farmerOrdersError
+                "Direct farmer_id order loading failed:",
+                error
             );
         }
 
 
-        /*
-         * ---------------------------------------------------
-         * STEP 3
-         * Fallback:
-         *
-         * Some existing orders may have product_id correctly
-         * stored but farmer_id missing/incorrect.
-         *
-         * In that case load orders using this farmer's
-         * product IDs.
-         * ---------------------------------------------------
-         */
+        /* -------------------------------------------------
+           METHOD 2
+           Find orders through farmer's products
 
-        if (orders.length === 0 && productIds.length > 0) {
+           farmer
+              ↓
+           products.farmer_id
+              ↓
+           products.id
+              ↓
+           orders.product_id
+        ------------------------------------------------- */
 
-            const {
-                data: productOrders,
-                error: productOrdersError
-            } = await supabase
-                .from("orders")
-                .select("*")
-                .in("product_id", productIds)
-                .order("created_at", {
-                    ascending: false
-                });
+        const productIds = (dashboardData.products || [])
+            .map(product => product.id)
+            .filter(Boolean);
 
-            if (!productOrdersError) {
-                orders = productOrders || [];
-            } else {
+
+        if (productIds.length > 0) {
+
+            try {
+                const {
+                    data: productOrders,
+                    error: productOrdersError
+                } = await supabase
+                    .from("orders")
+                    .select("*")
+                    .in("product_id", productIds)
+                    .order("created_at", { ascending: false });
+
+                if (!productOrdersError && Array.isArray(productOrders)) {
+                    allOrders.push(...productOrders);
+                }
+
+            } catch (error) {
                 console.warn(
-                    "Orders by product_id failed:",
-                    productOrdersError
+                    "Product based order loading failed:",
+                    error
                 );
             }
         }
 
 
-        /*
-         * ---------------------------------------------------
-         * STEP 4
-         * Remove duplicate orders.
-         *
-         * This is important when fallback data overlaps with
-         * already-loaded orders.
-         * ---------------------------------------------------
-         */
+        /* -------------------------------------------------
+           REMOVE DUPLICATE ORDERS
+
+           Same order may be returned by both queries.
+        ------------------------------------------------- */
 
         const uniqueOrders = [];
-        const seenOrderIds = new Set();
+        const orderIds = new Set();
 
-        for (const order of orders) {
+        allOrders.forEach(order => {
 
-            const orderId = String(
+            const id =
                 order.id ||
                 order.order_id ||
-                `${order.product_id}-${order.created_at}`
-            );
+                `${order.created_at || ""}-${order.product_id || ""}-${order.total_amount || order.amount || ""}`;
 
-            if (!seenOrderIds.has(orderId)) {
-                seenOrderIds.add(orderId);
+            if (!orderIds.has(id)) {
+                orderIds.add(id);
                 uniqueOrders.push(order);
             }
-        }
-
-        orders = uniqueOrders;
+        });
 
 
-        /*
-         * ---------------------------------------------------
-         * STEP 5
-         * Load product details for the orders.
-         *
-         * This allows the dashboard to display the actual
-         * product name when product_name is not directly
-         * stored in the orders table.
-         * ---------------------------------------------------
-         */
+        /* -------------------------------------------------
+           SORT NEWEST FIRST
+        ------------------------------------------------- */
 
-        if (orders.length > 0 && productIds.length > 0) {
+        uniqueOrders.sort((a, b) => {
 
-            const orderProductIds = [
-                ...new Set(
-                    orders
-                        .map(order => order.product_id)
-                        .filter(Boolean)
-                        .map(id => String(id))
-                )
-            ];
+            const dateA = new Date(
+                a.created_at ||
+                a.date ||
+                a.order_date ||
+                0
+            ).getTime();
 
-            if (orderProductIds.length > 0) {
+            const dateB = new Date(
+                b.created_at ||
+                b.date ||
+                b.order_date ||
+                0
+            ).getTime();
 
-                const {
-                    data: products,
-                    error: productsError
-                } = await supabase
-                    .from("products")
-                    .select(`
-                        id,
-                        name,
-                        price_per_unit,
-                        unit
-                    `)
-                    .in("id", orderProductIds);
-
-                if (!productsError && products) {
-
-                    const productMap = new Map();
-
-                    products.forEach(product => {
-                        productMap.set(
-                            String(product.id),
-                            product
-                        );
-                    });
-
-                    orders = orders.map(order => {
-
-                        const product =
-                            productMap.get(
-                                String(order.product_id)
-                            );
-
-                        return {
-                            ...order,
-
-                            product: product || null,
-
-                            product_name:
-                                order.product_name ||
-                                product?.name ||
-                                order.product ||
-                                order.name ||
-                                "Farm Produce"
-                        };
-                    });
-                }
-            }
-        }
+            return dateB - dateA;
+        });
 
 
-        /*
-         * ---------------------------------------------------
-         * STEP 6
-         * Save final orders into dashboard state.
-         * ---------------------------------------------------
-         */
+        dashboardData.orders = uniqueOrders;
 
-        dashboardData.orders = orders;
+        /* -------------------------------------------------
+           CALCULATE EARNINGS FROM LOADED ORDERS
+        ------------------------------------------------- */
 
         dashboardData.earnings =
-            calculateEarnings(
-                dashboardData.orders
-            );
+            calculateEarnings(dashboardData.orders);
 
 
         console.log(
             "Farmer orders loaded:",
             dashboardData.orders
+        );
+
+        console.log(
+            "Farmer earnings:",
+            dashboardData.earnings
         );
 
     } catch (error) {
@@ -381,12 +301,13 @@ function calculateEarnings(orders) {
                 order.status ||
                 order.order_status ||
                 ""
-            ).toLowerCase();
+            ).toLowerCase().trim();
 
             return (
                 status === "completed" ||
                 status === "delivered"
             );
+
         })
         .reduce((total, order) => {
 
@@ -395,15 +316,12 @@ function calculateEarnings(orders) {
                 order.amount ??
                 order.total ??
                 order.price ??
+                order.order_total ??
                 0
             );
 
             return total +
-                (
-                    Number.isFinite(amount)
-                        ? amount
-                        : 0
-                );
+                (Number.isFinite(amount) ? amount : 0);
 
         }, 0);
 }
@@ -425,12 +343,19 @@ function updateStats() {
         document.getElementById("totalEarnings");
 
 
-    if (totalProducts) {
+    /* -----------------------------------------------
+       PRODUCTS
+    ------------------------------------------------ */
 
+    if (totalProducts) {
         totalProducts.textContent =
             dashboardData.products.length;
     }
 
+
+    /* -----------------------------------------------
+       PENDING / NEW ORDERS
+    ------------------------------------------------ */
 
     if (newOrders) {
 
@@ -441,18 +366,22 @@ function updateStats() {
                     order.status ||
                     order.order_status ||
                     ""
-                ).toLowerCase();
+                ).toLowerCase().trim();
 
                 return (
                     status === "new" ||
                     status === "pending"
                 );
+
             }).length;
 
-        newOrders.textContent =
-            pendingOrders;
+        newOrders.textContent = pendingOrders;
     }
 
+
+    /* -----------------------------------------------
+       EARNINGS
+    ------------------------------------------------ */
 
     if (totalEarnings) {
 
@@ -473,8 +402,14 @@ function displayRecentOrders() {
     const container =
         document.getElementById("recentOrders");
 
-    if (!container) return;
+    if (!container) {
+        return;
+    }
 
+
+    /* -----------------------------------------------
+       EMPTY STATE
+    ------------------------------------------------ */
 
     if (
         !dashboardData.orders ||
@@ -492,23 +427,29 @@ function displayRecentOrders() {
     }
 
 
+    /* -----------------------------------------------
+       GET LATEST 5 ORDERS
+    ------------------------------------------------ */
+
     const recentOrders =
         [...dashboardData.orders]
             .sort((a, b) => {
 
-                return (
-                    new Date(
-                        b.created_at ||
-                        b.date ||
-                        0
-                    ).getTime()
-                    -
-                    new Date(
-                        a.created_at ||
-                        a.date ||
-                        0
-                    ).getTime()
-                );
+                const dateA = new Date(
+                    a.created_at ||
+                    a.date ||
+                    a.order_date ||
+                    0
+                ).getTime();
+
+                const dateB = new Date(
+                    b.created_at ||
+                    b.date ||
+                    b.order_date ||
+                    0
+                ).getTime();
+
+                return dateB - dateA;
 
             })
             .slice(0, 5);
@@ -516,6 +457,10 @@ function displayRecentOrders() {
 
     container.innerHTML = "";
 
+
+    /* -----------------------------------------------
+       RENDER ORDERS
+    ------------------------------------------------ */
 
     recentOrders.forEach(order => {
 
@@ -526,6 +471,10 @@ function displayRecentOrders() {
             "recent-order";
 
 
+        /* -------------------------------------------
+           PRODUCT NAME
+        -------------------------------------------- */
+
         const productName =
             order.product_name ||
             order.product ||
@@ -533,20 +482,35 @@ function displayRecentOrders() {
             "Product Order";
 
 
+        /* -------------------------------------------
+           CUSTOMER NAME
+        -------------------------------------------- */
+
         const customerName =
             order.customer_name ||
             order.customer ||
+            order.customerName ||
             "Customer";
 
 
-        const amount = Number(
-            order.total_amount ??
-            order.amount ??
-            order.total ??
-            order.price ??
-            0
-        );
+        /* -------------------------------------------
+           AMOUNT
+        -------------------------------------------- */
 
+        const amount =
+            Number(
+                order.total_amount ??
+                order.amount ??
+                order.total ??
+                order.price ??
+                order.order_total ??
+                0
+            );
+
+
+        /* -------------------------------------------
+           STATUS
+        -------------------------------------------- */
 
         const orderStatus =
             order.order_status ||
@@ -554,14 +518,16 @@ function displayRecentOrders() {
             "pending";
 
 
-        orderElement.innerHTML = `
+        /* -------------------------------------------
+           HTML
+        -------------------------------------------- */
 
+        orderElement.innerHTML = `
             <div class="order-icon">
                 📦
             </div>
 
             <div class="order-info">
-
                 <h3>
                     ${escapeHTML(productName)}
                 </h3>
@@ -569,7 +535,6 @@ function displayRecentOrders() {
                 <p>
                     ${escapeHTML(customerName)}
                 </p>
-
             </div>
 
             <div class="order-right">
@@ -578,20 +543,15 @@ function displayRecentOrders() {
                     ${formatRupees(amount)}
                 </strong>
 
-                <span
-                    class="order-status ${getStatusClass(orderStatus)}"
-                >
+                <span class="order-status ${getStatusClass(orderStatus)}">
                     ${formatStatus(orderStatus)}
                 </span>
 
             </div>
-
         `;
 
 
-        container.appendChild(
-            orderElement
-        );
+        container.appendChild(orderElement);
     });
 }
 
@@ -607,7 +567,9 @@ function getStatusClass(status) {
     }
 
     switch (
-        String(status).toLowerCase()
+        String(status)
+            .toLowerCase()
+            .trim()
     ) {
 
         case "new":
@@ -624,7 +586,13 @@ function getStatusClass(status) {
             return "completed";
 
         case "cancelled":
+        case "canceled":
             return "cancelled";
+
+        case "shipped":
+        case "in_transit":
+        case "in transit":
+            return "confirmed";
 
         default:
             return "pending";
@@ -633,7 +601,7 @@ function getStatusClass(status) {
 
 
 /* =========================================================
-   FORMAT ORDER STATUS
+   FORMAT STATUS
    ========================================================= */
 
 function formatStatus(status) {
@@ -643,7 +611,9 @@ function formatStatus(status) {
     }
 
     const text =
-        String(status);
+        String(status)
+            .replace(/_/g, " ")
+            .trim();
 
     return (
         text.charAt(0).toUpperCase() +
@@ -653,11 +623,10 @@ function formatStatus(status) {
 
 
 /* =========================================================
-   GLOBAL EXPORT
+   GLOBAL
    ========================================================= */
 
-window.loadDashboard =
-    loadDashboard;
+window.loadDashboard = loadDashboard;
 
 export {
     loadDashboard
