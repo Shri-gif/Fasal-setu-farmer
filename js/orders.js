@@ -1,267 +1,1146 @@
 /* =========================================================
    KHET2GHAR FARMER
    orders.js
-   Farmer Orders with interactive dispatch transitions
+   REAL SUPABASE FARMER ORDERS
    ========================================================= */
 
 import { supabase } from "./supabase.js";
-import { formatRupees, showEmptyState, escapeHTML, showToast } from "./app.js";
 
 let allOrders = [];
 let currentFarmer = null;
 
+
+/* =========================================================
+   PAGE LOAD
+   ========================================================= */
+
 document.addEventListener("DOMContentLoaded", async () => {
     try {
+        currentFarmer = await getCurrentFarmer();
+
         await loadFarmerOrders();
+
         setupOrderSearch();
         setupOrderFilter();
+
     } catch (error) {
         console.error("Orders page error:", error);
-        showOrdersError(error.message || "Unable to load orders.");
+
+        showOrdersError(
+            error?.message || "Unable to load orders."
+        );
     }
 });
 
+
+/* =========================================================
+   GET CURRENT FARMER
+   ========================================================= */
+
 async function getCurrentFarmer() {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
+
+    const {
+        data: { user },
+        error: userError
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+        throw userError;
+    }
 
     if (!user) {
         window.location.replace("index.html");
         throw new Error("Please login first.");
     }
 
-    const { data: farmer, error: farmerError } = await supabase
+
+    const {
+        data: farmer,
+        error: farmerError
+    } = await supabase
         .from("farmers")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
 
-    if (farmerError) throw farmerError;
-    if (!farmer) throw new Error("Farmer profile not found.");
+    if (farmerError) {
+        throw farmerError;
+    }
+
+    if (!farmer) {
+        throw new Error("Farmer profile not found.");
+    }
 
     return farmer;
 }
 
+
+/* =========================================================
+   LOAD FARMER ORDERS
+   ========================================================= */
+
 async function loadFarmerOrders() {
-    const farmer = await getCurrentFarmer();
-    currentFarmer = farmer;
 
-    const { data: orders, error: ordersError } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("farmer_id", farmer.id)
-        .order("created_at", { ascending: false });
-
-    if (ordersError) throw ordersError;
-
-    if (!orders || orders.length === 0) {
-        allOrders = [];
-        updateOrderSummary();
-        showEmptyOrders();
-        return;
+    if (!currentFarmer?.id) {
+        throw new Error("Farmer ID not found.");
     }
 
-    const productIds = [...new Set(orders.map(o => o.product_id).filter(Boolean))];
-    let productMap = new Map();
+    console.log(
+        "Loading orders for farmer:",
+        currentFarmer.id
+    );
+
+
+    /*
+     * IMPORTANT:
+     * Database structure used by this project:
+     *
+     * orders.farmer_id
+     * orders.product_id
+     * orders.customer_name
+     * orders.customer_mobile
+     * orders.quantity
+     * orders.price_per_unit
+     * orders.subtotal
+     * orders.total_amount
+     * orders.payment_status
+     * orders.order_status
+     * orders.status
+     * orders.created_at
+     */
+
+    const {
+        data: orders,
+        error: ordersError
+    } = await supabase
+        .from("orders")
+        .select(`
+            id,
+            consumer_id,
+            customer_name,
+            customer_mobile,
+            delivery_address,
+            city,
+            pincode,
+            farmer_id,
+            product_id,
+            quantity,
+            price_per_unit,
+            subtotal,
+            delivery_fee,
+            discount,
+            total_amount,
+            payment_status,
+            order_status,
+            status,
+            delivery_slot,
+            notes,
+            created_at,
+            updated_at
+        `)
+        .eq(
+            "farmer_id",
+            currentFarmer.id
+        )
+        .order(
+            "created_at",
+            {
+                ascending: false
+            }
+        );
+
+
+    if (ordersError) {
+        console.error(
+            "Supabase orders error:",
+            ordersError
+        );
+
+        throw ordersError;
+    }
+
+
+    console.log(
+        "Farmer orders loaded:",
+        orders
+    );
+
+
+    allOrders = orders || [];
+
+
+    /*
+     * Load product information separately.
+     *
+     * If product loading fails, orders should
+     * STILL remain visible.
+     */
+
+    const productIds = [
+        ...new Set(
+            allOrders
+                .map(order => order.product_id)
+                .filter(Boolean)
+        )
+    ];
+
 
     if (productIds.length > 0) {
-        const { data: products } = await supabase
-            .from("products")
-            .select("id, name, image_url, unit, farm_location")
-            .in("id", productIds);
 
-        if (products) {
-            products.forEach(p => productMap.set(p.id, p));
+        try {
+
+            const {
+                data: products,
+                error: productsError
+            } = await supabase
+                .from("products")
+                .select(`
+                    id,
+                    name,
+                    image_url,
+                    unit,
+                    farm_location,
+                    price_per_unit
+                `)
+                .in(
+                    "id",
+                    productIds
+                );
+
+
+            if (productsError) {
+                console.error(
+                    "Product loading error:",
+                    productsError
+                );
+            } else {
+
+                const productMap =
+                    new Map(
+                        (products || []).map(
+                            product => [
+                                String(product.id),
+                                product
+                            ]
+                        )
+                    );
+
+
+                allOrders =
+                    allOrders.map(order => ({
+                        ...order,
+
+                        product:
+                            productMap.get(
+                                String(order.product_id)
+                            ) || null
+                    }));
+            }
+
+        } catch (productError) {
+
+            console.error(
+                "Product lookup failed:",
+                productError
+            );
+
+            /*
+             * Do NOT clear orders.
+             * Orders must still be displayed.
+             */
         }
     }
 
-    allOrders = orders.map(order => ({
-        ...order,
-        product: productMap.get(order.product_id) || null
-    }));
 
     updateOrderSummary();
+
     renderOrders(allOrders);
 }
 
+
+/* =========================================================
+   ORDER SUMMARY
+   ========================================================= */
+
 function updateOrderSummary() {
-    const total = allOrders.length;
-    const pending = allOrders.filter(o => {
-        const s = String(o.order_status || o.status || "").toLowerCase();
-        return s === "pending" || s === "new";
-    }).length;
 
-    const completed = allOrders.filter(o => {
-        const s = String(o.order_status || o.status || "").toLowerCase();
-        return s === "completed" || s === "delivered";
-    }).length;
+    const total =
+        allOrders.length;
 
-    const totalEl = document.getElementById("totalOrders");
-    const pendingEl = document.getElementById("pendingOrders");
-    const completedEl = document.getElementById("completedOrders");
 
-    if (totalEl) totalEl.textContent = total;
-    if (pendingEl) pendingEl.textContent = pending;
-    if (completedEl) completedEl.textContent = completed;
+    const pending =
+        allOrders.filter(order => {
+
+            const status =
+                getOrderStatus(order);
+
+            return (
+                status === "pending" ||
+                status === "new" ||
+                status === ""
+            );
+
+        }).length;
+
+
+    const completed =
+        allOrders.filter(order => {
+
+            const status =
+                getOrderStatus(order);
+
+            return (
+                status === "completed" ||
+                status === "delivered"
+            );
+
+        }).length;
+
+
+    const totalElement =
+        document.getElementById(
+            "totalOrders"
+        );
+
+    const pendingElement =
+        document.getElementById(
+            "pendingOrders"
+        );
+
+    const completedElement =
+        document.getElementById(
+            "completedOrders"
+        );
+
+
+    if (totalElement) {
+        totalElement.textContent =
+            total;
+    }
+
+    if (pendingElement) {
+        pendingElement.textContent =
+            pending;
+    }
+
+    if (completedElement) {
+        completedElement.textContent =
+            completed;
+    }
 }
 
+
+/* =========================================================
+   GET ORDER STATUS
+   ========================================================= */
+
+function getOrderStatus(order) {
+
+    return String(
+        order?.order_status ||
+        order?.status ||
+        "pending"
+    )
+        .trim()
+        .toLowerCase();
+}
+
+
+/* =========================================================
+   RENDER ORDERS
+   ========================================================= */
+
 function renderOrders(orders) {
-    const container = document.getElementById("ordersContainer");
-    const emptyState = document.getElementById("emptyOrders");
 
-    if (!container) return;
+    const container =
+        document.getElementById(
+            "ordersContainer"
+        );
 
-    if (!orders || orders.length === 0) {
-        container.style.display = "none";
-        if (emptyState) emptyState.style.display = "block";
+    const emptyState =
+        document.getElementById(
+            "emptyOrders"
+        );
+
+
+    if (!container) {
         return;
     }
 
-    if (emptyState) emptyState.style.display = "none";
-    container.style.display = "grid";
-    container.innerHTML = orders.map(order => createOrderCard(order)).join("");
+
+    if (
+        !orders ||
+        orders.length === 0
+    ) {
+
+        container.style.display =
+            "none";
+
+        if (emptyState) {
+            emptyState.style.display =
+                "block";
+        }
+
+        return;
+    }
+
+
+    if (emptyState) {
+        emptyState.style.display =
+            "none";
+    }
+
+
+    container.style.display =
+        "grid";
+
+
+    container.innerHTML =
+        orders
+            .map(order =>
+                createOrderCard(order)
+            )
+            .join("");
 }
 
-function createOrderCard(order) {
-    const status = String(order.order_status || order.status || "pending").toLowerCase();
-    const paymentStatus = String(order.payment_status || "pending").toLowerCase();
-    const date = formatDate(order.created_at);
-    const product = order.product || {};
-    const productName = escapeHTML(product.name || order.product_name || "Farm Produce");
-    const quantity = Number(order.quantity || 1);
-    const unit = escapeHTML(product.unit || "kg");
-    const unitPrice = formatRupees(order.price_per_unit || 0);
-    const totalAmount = formatRupees(order.total_amount || order.subtotal || 0);
 
-    const customerName = escapeHTML(order.customer_name || "Customer");
-    const customerMobile = escapeHTML(order.customer_mobile || "");
-    const deliveryAddress = escapeHTML(order.delivery_address || "");
+/* =========================================================
+   CREATE ORDER CARD
+   ========================================================= */
+
+function createOrderCard(order) {
+
+    const status =
+        getOrderStatus(order);
+
+
+    const paymentStatus =
+        String(
+            order.payment_status ||
+            "pending"
+        )
+            .toLowerCase();
+
+
+    const date =
+        formatDate(
+            order.created_at
+        );
+
+
+    const product =
+        order.product || {};
+
+
+    const productName =
+        escapeHTML(
+            product.name ||
+            order.product_name ||
+            "Farm Produce"
+        );
+
+
+    const quantity =
+        Number(
+            order.quantity || 1
+        );
+
+
+    const unit =
+        escapeHTML(
+            product.unit || ""
+        );
+
+
+    const unitPrice =
+        Number(
+            order.price_per_unit ??
+            product.price_per_unit ??
+            0
+        );
+
+
+    const subtotal =
+        Number(
+            order.subtotal ??
+            (unitPrice * quantity) ??
+            0
+        );
+
+
+    const totalAmount =
+        Number(
+            order.total_amount ??
+            subtotal ??
+            0
+        );
+
+
+    const customerName =
+        escapeHTML(
+            order.customer_name ||
+            "Customer"
+        );
+
+
+    const customerMobile =
+        escapeHTML(
+            order.customer_mobile ||
+            ""
+        );
+
+
+    const address =
+        escapeHTML(
+            order.delivery_address ||
+            ""
+        );
+
+
+    const city =
+        escapeHTML(
+            order.city ||
+            ""
+        );
+
+
+    const pincode =
+        escapeHTML(
+            order.pincode ||
+            ""
+        );
+
+
+    const orderId =
+        String(
+            order.id || ""
+        )
+            .slice(0, 8)
+            .toUpperCase();
+
 
     return `
-        <article class="product-card order-card" style="padding: 16px;">
-            <div class="product-card-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <article class="product-card order-card">
+
+            <div class="product-card-header">
+
                 <div>
-                    <span class="product-category">ORDER</span>
-                    <h3 style="margin-top:4px;">#${escapeHTML(String(order.id || "").slice(0, 8).toUpperCase())}</h3>
+
+                    <span class="product-category">
+                        FASAL SETU ORDER
+                    </span>
+
+                    <h3>
+                        Order #${orderId}
+                    </h3>
+
                 </div>
-                <span class="order-status ${getStatusClass(status)}">
-                    ${formatStatus(status)}
+
+                <span class="order-status status-${escapeHTML(status)}">
+                    ${capitalize(status)}
                 </span>
+
             </div>
 
-            <div class="order-date" style="font-size:11px; color:var(--text-light); margin: 6px 0;">
+
+            <div class="order-date">
                 📅 ${date}
             </div>
 
-            <div class="order-details" style="font-size:13px; margin: 10px 0; border-top: 1px solid var(--border); padding-top: 8px;">
-                <div><strong>Customer:</strong> ${customerName} ${customerMobile ? `(${customerMobile})` : ""}</div>
-                ${deliveryAddress ? `<div><strong>Address:</strong> 📍 ${deliveryAddress}</div>` : ""}
-            </div>
 
-            <div class="order-items" style="background:var(--green-light); padding:10px; border-radius:10px; margin: 8px 0;">
-                <div style="display:flex; justify-content:space-between;">
-                    <span><strong>${productName}</strong> (${quantity} ${unit} × ${unitPrice})</span>
-                    <strong>${totalAmount}</strong>
-                </div>
-            </div>
+            <div class="order-details">
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:8px; border-top:1px solid var(--border);">
-                <span style="font-size:12px; color:var(--text-light);">Payment: <strong>${capitalize(paymentStatus)}</strong></span>
                 <div>
-                    ${status === "pending" ? `<button class="primary-btn" onclick="updateOrderStatus('${order.id}', 'confirmed')" style="padding:6px 12px; font-size:12px;">Accept Order ✓</button>` : ""}
-                    ${status === "confirmed" ? `<button class="primary-btn" onclick="updateOrderStatus('${order.id}', 'completed')" style="padding:6px 12px; font-size:12px;">Mark Completed 🎉</button>` : ""}
+                    <span>Customer</span>
+
+                    <strong>
+                        ${customerName}
+                    </strong>
                 </div>
+
+
+                <div>
+                    <span>Mobile</span>
+
+                    <strong>
+                        ${customerMobile || "Not provided"}
+                    </strong>
+                </div>
+
             </div>
+
+
+            ${
+                address ||
+                city ||
+                pincode
+                    ? `
+                        <div class="order-notes">
+                            📍
+                            ${address}
+                            ${city ? `, ${city}` : ""}
+                            ${pincode ? ` - ${pincode}` : ""}
+                        </div>
+                    `
+                    : ""
+            }
+
+
+            <div class="order-items">
+
+                <div class="order-item">
+
+                    <div class="order-item-info">
+
+                        <strong>
+                            ${productName}
+                        </strong>
+
+                        <small>
+                            ${quantity}
+                            ${unit ? ` ${unit}` : ""}
+                            ×
+                            ${formatRupees(unitPrice)}
+                        </small>
+
+                    </div>
+
+
+                    <strong>
+                        ${formatRupees(subtotal)}
+                    </strong>
+
+                </div>
+
+            </div>
+
+
+            <div class="order-total">
+
+                <span>
+                    Total Amount
+                </span>
+
+                <strong>
+                    ${formatRupees(totalAmount)}
+                </strong>
+
+            </div>
+
+
+            <div class="order-notes">
+
+                💳 Payment:
+                ${capitalize(paymentStatus)}
+
+            </div>
+
+
+            <div
+                style="
+                    display:flex;
+                    gap:8px;
+                    margin-top:14px;
+                    flex-wrap:wrap;
+                "
+            >
+
+                ${
+                    status !== "confirmed"
+                        ? `
+                            <button
+                                type="button"
+                                class="secondary-btn"
+                                onclick="updateStatus('${escapeAttribute(order.id)}','confirmed')"
+                                style="flex:1;"
+                            >
+                                ✓ Confirm
+                            </button>
+                        `
+                        : ""
+                }
+
+
+                ${
+                    status !== "shipped"
+                        ? `
+                            <button
+                                type="button"
+                                class="secondary-btn"
+                                onclick="updateStatus('${escapeAttribute(order.id)}','shipped')"
+                                style="flex:1;"
+                            >
+                                🚚 Ship
+                            </button>
+                        `
+                        : ""
+                }
+
+
+                ${
+                    status !== "delivered" &&
+                    status !== "completed" &&
+                    status !== "cancelled"
+                        ? `
+                            <button
+                                type="button"
+                                class="primary-btn"
+                                onclick="updateStatus('${escapeAttribute(order.id)}','delivered')"
+                                style="flex:1;min-height:40px;"
+                            >
+                                ✅ Deliver
+                            </button>
+                        `
+                        : ""
+                }
+
+            </div>
+
         </article>
     `;
 }
 
-window.updateOrderStatus = async function(orderId, newStatus) {
-    try {
-        const { error } = await supabase
-            .from("orders")
-            .update({ order_status: newStatus, status: newStatus, updated_at: new Date().toISOString() })
-            .eq("id", orderId);
 
-        if (error) throw error;
+/* =========================================================
+   UPDATE ORDER STATUS
+   ========================================================= */
 
-        showToast(`Order status updated to ${newStatus.toUpperCase()}`);
-        await loadFarmerOrders();
-    } catch (e) {
-        console.error("Update error:", e);
-        showToast(e.message || "Failed to update order");
-    }
-};
+window.updateStatus =
+    async function (
+        orderId,
+        newStatus
+    ) {
+
+        try {
+
+            const {
+                error
+            } = await supabase
+                .from("orders")
+                .update({
+                    status: newStatus,
+                    order_status: newStatus
+                })
+                .eq(
+                    "id",
+                    orderId
+                )
+                .eq(
+                    "farmer_id",
+                    currentFarmer.id
+                );
+
+
+            /*
+             * Some databases may use only
+             * one of status/order_status.
+             *
+             * If combined update fails,
+             * try status only.
+             */
+
+            if (error) {
+
+                console.warn(
+                    "Combined status update failed:",
+                    error
+                );
+
+
+                const {
+                    error: statusError
+                } = await supabase
+                    .from("orders")
+                    .update({
+                        status: newStatus
+                    })
+                    .eq(
+                        "id",
+                        orderId
+                    )
+                    .eq(
+                        "farmer_id",
+                        currentFarmer.id
+                    );
+
+
+                if (statusError) {
+                    throw statusError;
+                }
+            }
+
+
+            /*
+             * Update local copy immediately.
+             */
+
+            allOrders =
+                allOrders.map(order => {
+
+                    if (
+                        String(order.id) ===
+                        String(orderId)
+                    ) {
+
+                        return {
+                            ...order,
+                            status: newStatus,
+                            order_status: newStatus
+                        };
+                    }
+
+                    return order;
+                });
+
+
+            updateOrderSummary();
+
+            applyFilters();
+
+        } catch (error) {
+
+            console.error(
+                "Status update error:",
+                error
+            );
+
+            alert(
+                error?.message ||
+                "Could not update order status."
+            );
+        }
+    };
+
+
+/* =========================================================
+   SEARCH
+   ========================================================= */
 
 function setupOrderSearch() {
-    const input = document.getElementById("orderSearch");
-    if (input) input.addEventListener("input", applyFilters);
+
+    const input =
+        document.getElementById(
+            "orderSearch"
+        );
+
+    input?.addEventListener(
+        "input",
+        applyFilters
+    );
 }
+
+
+/* =========================================================
+   FILTER
+   ========================================================= */
 
 function setupOrderFilter() {
-    const filter = document.getElementById("orderFilter");
-    if (filter) filter.addEventListener("change", applyFilters);
+
+    const filter =
+        document.getElementById(
+            "orderFilter"
+        );
+
+    filter?.addEventListener(
+        "change",
+        applyFilters
+    );
 }
 
-function applyFilters() {
-    const search = document.getElementById("orderSearch")?.value?.trim().toLowerCase() || "";
-    const filterVal = document.getElementById("orderFilter")?.value?.toLowerCase() || "all";
 
-    const filtered = allOrders.filter(order => {
-        const status = String(order.order_status || order.status || "").toLowerCase();
-        const searchTarget = (String(order.id) + " " + String(order.customer_name) + " " + String(order.product?.name || "")).toLowerCase();
-        const matchesSearch = !search || searchTarget.includes(search);
-        const matchesFilter = filterVal === "all" || status === filterVal;
-        return matchesSearch && matchesFilter;
-    });
+/* =========================================================
+   APPLY SEARCH + FILTER
+   ========================================================= */
+
+function applyFilters() {
+
+    const search =
+        document
+            .getElementById(
+                "orderSearch"
+            )
+            ?.value
+            ?.trim()
+            .toLowerCase() || "";
+
+
+    const selectedStatus =
+        document
+            .getElementById(
+                "orderFilter"
+            )
+            ?.value
+            ?.toLowerCase() ||
+        "all";
+
+
+    const filtered =
+        allOrders.filter(order => {
+
+            const status =
+                getOrderStatus(order);
+
+
+            const orderId =
+                String(
+                    order.id || ""
+                ).toLowerCase();
+
+
+            const productName =
+                String(
+                    order.product?.name ||
+                    order.product_name ||
+                    ""
+                ).toLowerCase();
+
+
+            const customerName =
+                String(
+                    order.customer_name ||
+                    ""
+                ).toLowerCase();
+
+
+            const customerMobile =
+                String(
+                    order.customer_mobile ||
+                    ""
+                ).toLowerCase();
+
+
+            const matchesSearch =
+                !search ||
+                orderId.includes(search) ||
+                productName.includes(search) ||
+                customerName.includes(search) ||
+                customerMobile.includes(search);
+
+
+            let matchesFilter =
+                selectedStatus === "all" ||
+                status === selectedStatus;
+
+
+            if (
+                selectedStatus === "completed" &&
+                (
+                    status === "completed" ||
+                    status === "delivered"
+                )
+            ) {
+                matchesFilter = true;
+            }
+
+
+            return (
+                matchesSearch &&
+                matchesFilter
+            );
+        });
+
 
     renderOrders(filtered);
 }
 
+
+/* =========================================================
+   EMPTY STATE
+   ========================================================= */
+
 function showEmptyOrders() {
-    const container = document.getElementById("ordersContainer");
-    const emptyState = document.getElementById("emptyOrders");
-    if (container) container.style.display = "none";
-    if (emptyState) emptyState.style.display = "block";
+
+    const container =
+        document.getElementById(
+            "ordersContainer"
+        );
+
+    const emptyState =
+        document.getElementById(
+            "emptyOrders"
+        );
+
+
+    if (container) {
+        container.style.display =
+            "none";
+    }
+
+
+    if (emptyState) {
+        emptyState.style.display =
+            "block";
+    }
 }
 
+
+/* =========================================================
+   ERROR STATE
+   ========================================================= */
+
 function showOrdersError(message) {
-    const emptyState = document.getElementById("emptyOrders");
+
+    const container =
+        document.getElementById(
+            "ordersContainer"
+        );
+
+    const emptyState =
+        document.getElementById(
+            "emptyOrders"
+        );
+
+
+    if (container) {
+        container.style.display =
+            "none";
+    }
+
+
     if (emptyState) {
-        emptyState.style.display = "block";
+
+        emptyState.style.display =
+            "block";
+
+
         emptyState.innerHTML = `
-            <div class="empty-icon">⚠️</div>
-            <h2>Unable to Load Orders</h2>
-            <p>${escapeHTML(message)}</p>
-            <button class="primary-btn" onclick="location.reload()">Try Again</button>
+            <div class="empty-icon">
+                ⚠️
+            </div>
+
+            <h2>
+                Unable to Load Orders
+            </h2>
+
+            <p>
+                ${escapeHTML(message)}
+            </p>
+
+            <button
+                class="primary-btn"
+                onclick="location.reload()"
+            >
+                Try Again
+            </button>
         `;
     }
 }
 
+
+/* =========================================================
+   DATE FORMAT
+   ========================================================= */
+
 function formatDate(dateValue) {
-    if (!dateValue) return "Recent";
-    const d = new Date(dateValue);
-    return isNaN(d.getTime()) ? "Recent" : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
 
-function capitalize(str) {
-    if (!str) return "";
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function getStatusClass(status) {
-    switch (String(status).toLowerCase()) {
-        case "new":
-        case "pending": return "pending";
-        case "confirmed": return "confirmed";
-        case "completed":
-        case "delivered": return "completed";
-        case "cancelled": return "cancelled";
-        default: return "pending";
+    if (!dateValue) {
+        return "Unknown date";
     }
+
+
+    const date =
+        new Date(dateValue);
+
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+        return "Unknown date";
+    }
+
+
+    return date.toLocaleDateString(
+        "en-IN",
+        {
+            day: "2-digit",
+            month: "short",
+            year: "numeric"
+        }
+    );
 }
 
-function formatStatus(status) {
-    if (!status) return "Pending";
-    return capitalize(String(status));
+
+/* =========================================================
+   RUPEE FORMAT
+   ========================================================= */
+
+function formatRupees(amount) {
+
+    const number =
+        Number(amount) || 0;
+
+
+    return (
+        "₹" +
+        number.toLocaleString(
+            "en-IN"
+        )
+    );
 }
+
+
+/* =========================================================
+   CAPITALIZE
+   ========================================================= */
+
+function capitalize(value) {
+
+    if (!value) {
+        return "";
+    }
+
+
+    const text =
+        String(value);
+
+
+    return (
+        text.charAt(0).toUpperCase() +
+        text.slice(1)
+    );
+}
+
+
+/* =========================================================
+   ESCAPE HTML
+   ========================================================= */
+
+function escapeHTML(value) {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return "";
+    }
+
+
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+
+/* =========================================================
+   ESCAPE ATTRIBUTE
+   ========================================================= */
+
+function escapeAttribute(value) {
+
+    return String(value ?? "")
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
+}
+
+
+/* =========================================================
+   GLOBAL REFRESH
+   ========================================================= */
+
+window.loadFarmerOrders =
+    loadFarmerOrders;
