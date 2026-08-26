@@ -31,7 +31,6 @@ async function checkAuth() {
             "products.html",
             "add-product.html",
             "orders.html",
-            "earning.html",
             "earnings.html",
             "profile.html"
         ];
