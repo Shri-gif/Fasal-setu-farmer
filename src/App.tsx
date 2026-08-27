@@ -21,9 +21,9 @@ import { LoginModal } from './components/LoginModal';
 import { CodeAuditModal } from './components/CodeAuditModal';
 
 export default function App() {
-  // ------------------------------------------------
-  // Navigation
-  // ------------------------------------------------
+  // =========================================================
+  // NAVIGATION
+  // =========================================================
 
   const [currentTab, setCurrentTab] =
     useState<string>('dashboard');
@@ -31,9 +31,9 @@ export default function App() {
   const [editProductId, setEditProductId] =
     useState<string | null>(null);
 
-  // ------------------------------------------------
-  // Authentication & Profiles
-  // ------------------------------------------------
+  // =========================================================
+  // AUTHENTICATION & PROFILES
+  // =========================================================
 
   const [isAuthenticated, setIsAuthenticated] =
     useState<boolean>(false);
@@ -47,9 +47,9 @@ export default function App() {
   const [farmerProfile, setFarmerProfile] =
     useState<FarmerProfile>({} as FarmerProfile);
 
-  // ------------------------------------------------
-  // Data Store
-  // ------------------------------------------------
+  // =========================================================
+  // DATA STORE
+  // =========================================================
 
   const [categories, setCategories] =
     useState<ProductCategory[]>([]);
@@ -60,9 +60,9 @@ export default function App() {
   const [orders, setOrders] =
     useState<Order[]>([]);
 
-  // ------------------------------------------------
-  // UI state
-  // ------------------------------------------------
+  // =========================================================
+  // UI STATE
+  // =========================================================
 
   const [isAuditModalOpen, setIsAuditModalOpen] =
     useState<boolean>(false);
@@ -70,9 +70,9 @@ export default function App() {
   const [toastMessage, setToastMessage] =
     useState<string | null>(null);
 
-  // ------------------------------------------------
-  // Toast Helper
-  // ------------------------------------------------
+  // =========================================================
+  // TOAST
+  // =========================================================
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -82,17 +82,82 @@ export default function App() {
     }, 3000);
   };
 
-  // ------------------------------------------------
-  // Sync with Supabase
-  // ------------------------------------------------
+  // =========================================================
+  // LOAD CATEGORIES
+  // =========================================================
+
+  const loadCategories = async (): Promise<boolean> => {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('product_categories')
+        .select('*')
+        .order('name', {
+          ascending: true,
+        });
+
+      if (error) {
+        console.error(
+          'Category load error:',
+          error
+        );
+
+        setCategories([]);
+
+        return false;
+      }
+
+      const normalizedCategories: ProductCategory[] =
+        (data || []).map(
+          (category: any) => ({
+            id: category.id,
+
+            name:
+              category.name ||
+              category.title ||
+              category.category_name ||
+              category.slug ||
+              'Category',
+
+            slug:
+              category.slug || '',
+
+            icon:
+              category.icon || '🌱',
+          })
+        );
+
+      setCategories(
+        normalizedCategories
+      );
+
+      return true;
+
+    } catch (error) {
+      console.error(
+        'Category load exception:',
+        error
+      );
+
+      setCategories([]);
+
+      return false;
+    }
+  };
+
+  // =========================================================
+  // SYNC WITH SUPABASE
+  // =========================================================
 
   const syncWithSupabase = async () => {
     try {
       setIsLiveConnected(false);
 
-      // ----------------------------------------------
-      // 1. Check authenticated Supabase session
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // 1. GET CURRENT SESSION
+      // -----------------------------------------------------
 
       const {
         data: sessionData,
@@ -103,18 +168,24 @@ export default function App() {
         throw sessionError;
       }
 
-      const authUser = sessionData.session?.user;
+      const authUser =
+        sessionData.session?.user;
 
-      // ----------------------------------------------
-      // No authenticated user
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // NO AUTH USER
+      // -----------------------------------------------------
 
       if (!authUser) {
         setIsAuthenticated(false);
         setIsLiveConnected(false);
 
-        setUserProfile({} as UserProfile);
-        setFarmerProfile({} as FarmerProfile);
+        setUserProfile(
+          {} as UserProfile
+        );
+
+        setFarmerProfile(
+          {} as FarmerProfile
+        );
 
         setCategories([]);
         setProducts([]);
@@ -125,9 +196,9 @@ export default function App() {
 
       setIsAuthenticated(true);
 
-      // ----------------------------------------------
-      // 2. Load user profile
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // 2. LOAD USER PROFILE
+      // -----------------------------------------------------
 
       const {
         data: profileData,
@@ -139,7 +210,10 @@ export default function App() {
         .maybeSingle();
 
       if (profileError) {
-        throw profileError;
+        console.warn(
+          'Profile load warning:',
+          profileError.message
+        );
       }
 
       const actualUser: UserProfile = {
@@ -172,11 +246,13 @@ export default function App() {
           '',
       };
 
-      setUserProfile(actualUser);
+      setUserProfile(
+        actualUser
+      );
 
-      // ----------------------------------------------
-      // 3. Load farmer profile
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // 3. LOAD FARMER PROFILE
+      // -----------------------------------------------------
 
       const {
         data: farmerData,
@@ -188,72 +264,52 @@ export default function App() {
         .maybeSingle();
 
       if (farmerError) {
-        throw farmerError;
+        console.warn(
+          'Farmer load warning:',
+          farmerError.message
+        );
       }
 
-      // No farmer profile
-      if (!farmerData) {
-        setFarmerProfile({
-          user_id: authUser.id,
-        } as FarmerProfile);
+      // -----------------------------------------------------
+      // ALWAYS LOAD CATEGORIES
+      //
+      // Categories do not depend on farmer profile.
+      // -----------------------------------------------------
 
-        setCategories([]);
+      await loadCategories();
+
+      // -----------------------------------------------------
+      // FARMER PROFILE NOT CREATED YET
+      // -----------------------------------------------------
+
+      if (!farmerData) {
+        const emptyFarmerProfile: Partial<FarmerProfile> = {
+          user_id: authUser.id,
+        };
+
+        setFarmerProfile(
+          emptyFarmerProfile as FarmerProfile
+        );
+
         setProducts([]);
         setOrders([]);
 
         setIsLiveConnected(true);
 
-        showToast(
-          'Farmer profile not found yet.'
-        );
-
         return;
       }
 
-      setFarmerProfile(farmerData);
+      // -----------------------------------------------------
+      // FARMER EXISTS
+      // -----------------------------------------------------
 
-      // ----------------------------------------------
-      // 4. Load product categories
-      // ----------------------------------------------
-
-      const {
-        data: categoryData,
-        error: categoryError,
-      } = await supabase
-        .from('product_categories')
-        .select('*')
-        .order('name', {
-          ascending: true,
-        });
-
-      if (categoryError) {
-        throw categoryError;
-      }
-
-      setCategories(
-        (categoryData || []).map(
-          (category: any) => ({
-            id: category.id,
-
-            name:
-              category.name ||
-              category.title ||
-              category.category_name ||
-              category.slug ||
-              'Category',
-
-            slug:
-              category.slug || '',
-
-            icon:
-              category.icon || '🌱',
-          })
-        )
+      setFarmerProfile(
+        farmerData as FarmerProfile
       );
 
-      // ----------------------------------------------
-      // 5. Load ONLY this farmer's products
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // 4. LOAD THIS FARMER'S PRODUCTS
+      // -----------------------------------------------------
 
       const {
         data: productData,
@@ -277,9 +333,9 @@ export default function App() {
         productData || []
       );
 
-      // ----------------------------------------------
-      // 6. Load ONLY this farmer's orders
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // 5. LOAD THIS FARMER'S ORDERS
+      // -----------------------------------------------------
 
       const {
         data: orderData,
@@ -303,15 +359,11 @@ export default function App() {
         orderData || []
       );
 
-      // ----------------------------------------------
-      // Sync complete
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // SYNC COMPLETE
+      // -----------------------------------------------------
 
       setIsLiveConnected(true);
-
-      showToast(
-        'Supabase data synchronized ✓'
-      );
 
     } catch (error: any) {
       console.error(
@@ -319,7 +371,6 @@ export default function App() {
         error
       );
 
-      // Never use demo/mock data.
       setCategories([]);
       setProducts([]);
       setOrders([]);
@@ -333,9 +384,9 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Initial Auth + Supabase listener
-  // ------------------------------------------------
+  // =========================================================
+  // INITIAL AUTH + AUTH LISTENER
+  // =========================================================
 
   useEffect(() => {
     let mounted = true;
@@ -377,19 +428,20 @@ export default function App() {
 
     return () => {
       mounted = false;
+
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // ------------------------------------------------
-  // Financial Computations
-  // ------------------------------------------------
+  // =========================================================
+  // FINANCIAL COMPUTATIONS
+  // =========================================================
 
   const totalEarnings = orders
-    .filter((o) => {
+    .filter((order) => {
       const status = (
-        o.order_status ||
-        o.status ||
+        order.order_status ||
+        order.status ||
         ''
       ).toLowerCase();
 
@@ -399,11 +451,11 @@ export default function App() {
       );
     })
     .reduce(
-      (sum, o) =>
+      (sum, order) =>
         sum +
         Number(
-          o.total_amount ||
-          o.subtotal ||
+          order.total_amount ||
+          order.subtotal ||
           0
         ),
       0
@@ -416,15 +468,15 @@ export default function App() {
     new Date().getFullYear();
 
   const monthlyEarnings = orders
-    .filter((o) => {
+    .filter((order) => {
       const status = (
-        o.order_status ||
-        o.status ||
+        order.order_status ||
+        order.status ||
         ''
       ).toLowerCase();
 
       const date =
-        new Date(o.created_at);
+        new Date(order.created_at);
 
       return (
         (
@@ -438,26 +490,28 @@ export default function App() {
       );
     })
     .reduce(
-      (sum, o) =>
+      (sum, order) =>
         sum +
         Number(
-          o.total_amount ||
-          o.subtotal ||
+          order.total_amount ||
+          order.subtotal ||
           0
         ),
       0
     );
 
-  // ------------------------------------------------
-  // Navigation
-  // ------------------------------------------------
+  // =========================================================
+  // NAVIGATION
+  // =========================================================
 
   const handleNavigate = (
     tab: string,
     productId?: string
   ) => {
     if (productId) {
-      setEditProductId(productId);
+      setEditProductId(
+        productId
+      );
     } else if (
       tab === 'add-product'
     ) {
@@ -472,19 +526,25 @@ export default function App() {
     });
   };
 
-  // ------------------------------------------------
-  // Save Product
-  // ------------------------------------------------
+  // =========================================================
+  // SAVE PRODUCT
+  // =========================================================
 
   const handleSaveProduct = async (
     productData: Partial<Product>
   ): Promise<boolean> => {
     try {
-      // ----------------------------------------------
-      // Update existing product
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // UPDATE EXISTING PRODUCT
+      // -----------------------------------------------------
 
       if (productData.id) {
+        if (!farmerProfile.id) {
+          throw new Error(
+            'Farmer profile is not available.'
+          );
+        }
+
         const {
           data,
           error,
@@ -526,13 +586,13 @@ export default function App() {
         return true;
       }
 
-      // ----------------------------------------------
-      // Create new product
-      // ----------------------------------------------
+      // -----------------------------------------------------
+      // CREATE NEW PRODUCT
+      // -----------------------------------------------------
 
       if (!farmerProfile.id) {
         throw new Error(
-          'Farmer profile is not available.'
+          'Please save your farmer profile before adding produce.'
         );
       }
 
@@ -631,14 +691,20 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Delete Product
-  // ------------------------------------------------
+  // =========================================================
+  // DELETE PRODUCT
+  // =========================================================
 
   const handleDeleteProduct = async (
     productId: string
   ) => {
     try {
+      if (!farmerProfile.id) {
+        throw new Error(
+          'Farmer profile is not available.'
+        );
+      }
+
       const {
         error,
       } = await supabase
@@ -682,15 +748,21 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Toggle Product Availability
-  // ------------------------------------------------
+  // =========================================================
+  // TOGGLE PRODUCT AVAILABILITY
+  // =========================================================
 
   const handleToggleAvailability = async (
     productId: string,
     current: boolean
   ) => {
     try {
+      if (!farmerProfile.id) {
+        throw new Error(
+          'Farmer profile is not available.'
+        );
+      }
+
       const {
         data,
         error,
@@ -745,15 +817,21 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Quick Stock Update
-  // ------------------------------------------------
+  // =========================================================
+  // QUICK STOCK UPDATE
+  // =========================================================
 
   const handleQuickUpdateStock = async (
     productId: string,
     newStock: number
   ) => {
     try {
+      if (!farmerProfile.id) {
+        throw new Error(
+          'Farmer profile is not available.'
+        );
+      }
+
       const {
         data,
         error,
@@ -803,15 +881,21 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Update Order Status
-  // ------------------------------------------------
+  // =========================================================
+  // UPDATE ORDER STATUS
+  // =========================================================
 
   const handleUpdateOrderStatus = async (
     orderId: string,
     newStatus: string
   ) => {
     try {
+      if (!farmerProfile.id) {
+        throw new Error(
+          'Farmer profile is not available.'
+        );
+      }
+
       const {
         data,
         error,
@@ -820,6 +904,7 @@ export default function App() {
         .update({
           order_status:
             newStatus,
+
           updated_at:
             new Date().toISOString(),
         })
@@ -867,29 +952,97 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Save User Profile
-  // ------------------------------------------------
+  // =========================================================
+  // SAVE USER PROFILE
+  //
+  // IMPORTANT:
+  // Uses UPSERT instead of UPDATE.
+  // This allows NEW farmers to create their profiles.
+  // =========================================================
 
   const handleSaveUserProfile = async (
     profile: Partial<UserProfile>
   ): Promise<boolean> => {
     try {
-      if (!userProfile.id) {
+      // -----------------------------------------------------
+      // Get authenticated user directly
+      // -----------------------------------------------------
+
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      const authUser =
+        sessionData.session?.user;
+
+      if (!authUser) {
         throw new Error(
           'User session not available.'
         );
       }
+
+      // -----------------------------------------------------
+      // Build complete profile payload
+      // -----------------------------------------------------
+
+      const profilePayload = {
+        id: authUser.id,
+
+        full_name:
+          profile.full_name ??
+          userProfile.full_name ??
+          authUser.user_metadata?.full_name ??
+          '',
+
+        email:
+          profile.email ??
+          userProfile.email ??
+          authUser.email ??
+          '',
+
+        mobile:
+          profile.mobile ??
+          userProfile.mobile ??
+          '',
+
+        village:
+          profile.village ??
+          userProfile.village ??
+          '',
+
+        district:
+          profile.district ??
+          userProfile.district ??
+          '',
+
+        state:
+          profile.state ??
+          userProfile.state ??
+          '',
+
+        updated_at:
+          new Date().toISOString(),
+      };
+
+      // -----------------------------------------------------
+      // UPSERT PROFILE
+      // -----------------------------------------------------
 
       const {
         data,
         error,
       } = await supabase
         .from('profiles')
-        .update(profile)
-        .eq(
-          'id',
-          userProfile.id
+        .upsert(
+          profilePayload,
+          {
+            onConflict: 'id',
+          }
         )
         .select()
         .single();
@@ -898,9 +1051,14 @@ export default function App() {
         throw error;
       }
 
+      // -----------------------------------------------------
+      // Update React state
+      // -----------------------------------------------------
+
       setUserProfile((prev) => ({
         ...prev,
-        ...(data || profile),
+
+        ...(data || profilePayload),
       }));
 
       showToast(
@@ -924,34 +1082,160 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Save Farmer Profile
-  // ------------------------------------------------
+  // =========================================================
+  // SAVE FARMER PROFILE
+  //
+  // IMPORTANT:
+  // Existing farmer -> UPDATE
+  // New farmer -> INSERT
+  // =========================================================
 
   const handleSaveFarmerProfile = async (
     profile: Partial<FarmerProfile>
   ): Promise<boolean> => {
     try {
-      if (!farmerProfile.id) {
+      // -----------------------------------------------------
+      // Get authenticated user
+      // -----------------------------------------------------
+
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      const authUser =
+        sessionData.session?.user;
+
+      if (!authUser) {
         throw new Error(
-          'Farmer profile not available.'
+          'User session not available.'
         );
       }
+
+      // -----------------------------------------------------
+      // Prepare farmer payload
+      // -----------------------------------------------------
+
+      const farmerPayload = {
+        user_id:
+          authUser.id,
+
+        farm_name:
+          profile.farm_name ??
+          farmerProfile.farm_name ??
+          '',
+
+        farm_size:
+          profile.farm_size ??
+          farmerProfile.farm_size ??
+          null,
+
+        farming_type:
+          profile.farming_type ??
+          farmerProfile.farming_type ??
+          'organic',
+
+        farm_location:
+          profile.farm_location ??
+          farmerProfile.farm_location ??
+          null,
+
+        district:
+          profile.district ??
+          farmerProfile.district ??
+          userProfile.district ??
+          null,
+
+        state:
+          profile.state ??
+          farmerProfile.state ??
+          userProfile.state ??
+          null,
+
+        verification_status:
+          profile.verification_status ??
+          farmerProfile.verification_status ??
+          'pending',
+
+        updated_at:
+          new Date().toISOString(),
+      };
+
+      // -----------------------------------------------------
+      // CHECK EXISTING FARMER ROW
+      // -----------------------------------------------------
+
+      const {
+        data: existingFarmer,
+        error: existingFarmerError,
+      } = await supabase
+        .from('farmers')
+        .select('*')
+        .eq(
+          'user_id',
+          authUser.id
+        )
+        .maybeSingle();
+
+      if (existingFarmerError) {
+        throw existingFarmerError;
+      }
+
+      // -----------------------------------------------------
+      // EXISTING FARMER -> UPDATE
+      // -----------------------------------------------------
+
+      if (existingFarmer?.id) {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('farmers')
+          .update(
+            farmerPayload
+          )
+          .eq(
+            'id',
+            existingFarmer.id
+          )
+          .eq(
+            'user_id',
+            authUser.id
+          )
+          .select()
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        setFarmerProfile(
+          data as FarmerProfile
+        );
+
+        showToast(
+          'Farm details saved ✓'
+        );
+
+        return true;
+      }
+
+      // -----------------------------------------------------
+      // NEW FARMER -> INSERT
+      // -----------------------------------------------------
 
       const {
         data,
         error,
       } = await supabase
         .from('farmers')
-        .update(profile)
-        .eq(
-          'id',
-          farmerProfile.id
-        )
-        .eq(
-          'user_id',
-          userProfile.id
-        )
+        .insert([
+          farmerPayload,
+        ])
         .select()
         .single();
 
@@ -959,13 +1243,33 @@ export default function App() {
         throw error;
       }
 
-      setFarmerProfile((prev) => ({
-        ...prev,
-        ...(data || profile),
-      }));
+      if (!data) {
+        throw new Error(
+          'Farmer profile could not be created.'
+        );
+      }
+
+      // -----------------------------------------------------
+      // Update farmer state immediately
+      // -----------------------------------------------------
+
+      setFarmerProfile(
+        data as FarmerProfile
+      );
+
+      // -----------------------------------------------------
+      // Refresh categories/products/orders state
+      // -----------------------------------------------------
+
+      await loadCategories();
+
+      setProducts([]);
+      setOrders([]);
+
+      setIsLiveConnected(true);
 
       showToast(
-        'Farm details saved ✓'
+        'Farmer profile created and farm details saved ✓'
       );
 
       return true;
@@ -985,9 +1289,9 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Login
-  // ------------------------------------------------
+  // =========================================================
+  // LOGIN
+  // =========================================================
 
   const handleAuthLogin = async (
     email: string,
@@ -1024,9 +1328,9 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Signup
-  // ------------------------------------------------
+  // =========================================================
+  // SIGNUP
+  // =========================================================
 
   const handleAuthSignup = async (
     email: string,
@@ -1048,6 +1352,10 @@ export default function App() {
         };
       }
 
+      // -----------------------------------------------------
+      // SESSION AVAILABLE
+      // -----------------------------------------------------
+
       if (data.session?.user) {
         await syncWithSupabase();
 
@@ -1056,8 +1364,13 @@ export default function App() {
         };
       }
 
+      // -----------------------------------------------------
+      // EMAIL CONFIRMATION REQUIRED
+      // -----------------------------------------------------
+
       return {
         success: true,
+
         message:
           'Account created. Please verify your email before logging in.',
       };
@@ -1065,6 +1378,7 @@ export default function App() {
     } catch (error: any) {
       return {
         success: false,
+
         message:
           error?.message ||
           'Signup error',
@@ -1072,9 +1386,9 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Logout
-  // ------------------------------------------------
+  // =========================================================
+  // LOGOUT
+  // =========================================================
 
   const handleLogout = async () => {
     try {
@@ -1101,7 +1415,10 @@ export default function App() {
       setProducts([]);
       setOrders([]);
 
-      setCurrentTab('dashboard');
+      setCurrentTab(
+        'dashboard'
+      );
+
       setEditProductId(null);
 
       showToast(
@@ -1121,15 +1438,21 @@ export default function App() {
     }
   };
 
-  // ------------------------------------------------
-  // Login Screen
-  // ------------------------------------------------
+  // =========================================================
+  // LOGIN SCREEN
+  // =========================================================
 
   if (!isAuthenticated) {
     return (
       <LoginModal
-        onLogin={handleAuthLogin}
-        onSignup={handleAuthSignup}
+        onLogin={
+          handleAuthLogin
+        }
+
+        onSignup={
+          handleAuthSignup
+        }
+
         onQuickDemoLogin={() =>
           showToast(
             'Demo login is disabled. Please use your Supabase account.'
@@ -1139,9 +1462,9 @@ export default function App() {
     );
   }
 
-  // ------------------------------------------------
-  // Pending Orders
-  // ------------------------------------------------
+  // =========================================================
+  // PENDING ORDERS
+  // =========================================================
 
   const pendingOrdersCount =
     orders.filter((order) => {
@@ -1157,32 +1480,45 @@ export default function App() {
       );
     }).length;
 
-  // ------------------------------------------------
-  // Main App
-  // ------------------------------------------------
+  // =========================================================
+  // MAIN APP
+  // =========================================================
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 font-sans flex flex-col justify-between selection:bg-emerald-100 selection:text-emerald-950">
 
       <div>
 
-        {/* Top Navbar */}
+        {/* =================================================
+            TOP NAVBAR
+        ================================================= */}
 
         <Navbar
-          currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
-          farmerName={
-            userProfile.full_name || ''
+          currentTab={
+            currentTab
           }
+
+          setCurrentTab={
+            setCurrentTab
+          }
+
+          farmerName={
+            userProfile.full_name ||
+            ''
+          }
+
           isLiveConnected={
             isLiveConnected
           }
+
           onRefreshData={
             syncWithSupabase
           }
         />
 
-        {/* Global Bug & Code Analysis Floating Banner */}
+        {/* =================================================
+            CODE AUDIT BANNER
+        ================================================= */}
 
         <div className="max-w-5xl mx-auto px-4 pt-4">
 
@@ -1199,17 +1535,21 @@ export default function App() {
                   Code Analysis Complete:
                 </strong>{' '}
                 6 critical bugs fixed
-                (Module script tag, missing
-                earnings engine, profile state
-                leakage, broken link routes).
+                (Module script tag,
+                missing earnings engine,
+                profile state leakage,
+                broken link routes).
               </span>
 
             </div>
 
             <button
               onClick={() =>
-                setIsAuditModalOpen(true)
+                setIsAuditModalOpen(
+                  true
+                )
               }
+
               className="px-3 py-1 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs transition-colors shadow-2xs"
             >
               View Bug Audit Report
@@ -1219,73 +1559,113 @@ export default function App() {
 
         </div>
 
-        {/* Main Content View Switcher */}
+        {/* =================================================
+            MAIN CONTENT
+        ================================================= */}
 
         <main className="max-w-5xl mx-auto px-4 pt-6 pb-20">
 
-          {/* Dashboard */}
+          {/* =================================================
+              DASHBOARD
+          ================================================= */}
 
-          {currentTab === 'dashboard' && (
+          {currentTab ===
+            'dashboard' && (
             <DashboardView
-              products={products}
-              orders={orders}
+              products={
+                products
+              }
+
+              orders={
+                orders
+              }
+
               totalEarnings={
                 totalEarnings
               }
+
               monthlyEarnings={
                 monthlyEarnings
               }
+
               farmerName={
                 userProfile.full_name
               }
+
               farmName={
                 farmerProfile.farm_name
               }
+
               onNavigate={
                 handleNavigate
               }
+
               onUpdateOrderStatus={
                 handleUpdateOrderStatus
               }
             />
           )}
 
-          {/* Products */}
+          {/* =================================================
+              PRODUCTS
+          ================================================= */}
 
-          {currentTab === 'products' && (
+          {currentTab ===
+            'products' && (
             <ProductsView
-              products={products}
-              categories={categories}
+              products={
+                products
+              }
+
+              categories={
+                categories
+              }
+
               onNavigate={
                 handleNavigate
               }
+
               onDeleteProduct={
                 handleDeleteProduct
               }
+
               onToggleAvailability={
                 handleToggleAvailability
               }
+
               onQuickUpdateStock={
                 handleQuickUpdateStock
               }
             />
           )}
 
-          {/* Add Product */}
+          {/* =================================================
+              ADD PRODUCT
+          ================================================= */}
 
-          {currentTab === 'add-product' && (
+          {currentTab ===
+            'add-product' && (
             <AddProductView
               editProductId={
                 editProductId
               }
-              products={products}
-              categories={categories}
+
+              products={
+                products
+              }
+
+              categories={
+                categories
+              }
+
               onSaveProduct={
                 handleSaveProduct
               }
+
               onNavigate={
                 handleNavigate
               }
+
               defaultFarmLocation={
                 farmerProfile.farm_location ||
                 'Lakhimpur Kheri, Uttar Pradesh'
@@ -1293,55 +1673,83 @@ export default function App() {
             />
           )}
 
-          {/* Orders */}
+          {/* =================================================
+              ORDERS
+          ================================================= */}
 
-          {currentTab === 'orders' && (
+          {currentTab ===
+            'orders' && (
             <OrdersView
-              orders={orders}
-              products={products}
+              orders={
+                orders
+              }
+
+              products={
+                products
+              }
+
               onUpdateOrderStatus={
                 handleUpdateOrderStatus
               }
+
               onNavigate={
                 handleNavigate
               }
             />
           )}
 
-          {/* Earnings */}
+          {/* =================================================
+              EARNINGS
+          ================================================= */}
 
-          {currentTab === 'earnings' && (
+          {currentTab ===
+            'earnings' && (
             <EarningsView
-              orders={orders}
-              products={products}
+              orders={
+                orders
+              }
+
+              products={
+                products
+              }
+
               totalEarnings={
                 totalEarnings
               }
+
               monthlyEarnings={
                 monthlyEarnings
               }
+
               onNavigate={
                 handleNavigate
               }
             />
           )}
 
-          {/* Profile */}
+          {/* =================================================
+              PROFILE
+          ================================================= */}
 
-          {currentTab === 'profile' && (
+          {currentTab ===
+            'profile' && (
             <ProfileView
               userProfile={
                 userProfile
               }
+
               farmerProfile={
                 farmerProfile
               }
+
               onSaveUserProfile={
                 handleSaveUserProfile
               }
+
               onSaveFarmerProfile={
                 handleSaveFarmerProfile
               }
+
               onLogout={
                 handleLogout
               }
@@ -1352,24 +1760,34 @@ export default function App() {
 
       </div>
 
-      {/* Persistent Bottom Mobile Navigation */}
+      {/* =====================================================
+          BOTTOM NAVIGATION
+      ====================================================== */}
 
       <BottomNav
-        currentTab={currentTab}
+        currentTab={
+          currentTab
+        }
+
         setCurrentTab={
           handleNavigate
         }
+
         pendingOrdersCount={
           pendingOrdersCount
         }
       />
 
-      {/* Floating Toast Notification */}
+      {/* =====================================================
+          FLOATING TOAST
+      ====================================================== */}
 
       {toastMessage && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 text-xs font-semibold flex items-center gap-2 animate-bounce">
 
-          <span>🌾</span>
+          <span>
+            🌾
+          </span>
 
           <span>
             {toastMessage}
@@ -1378,14 +1796,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Code Audit and Correction Report Modal */}
+      {/* =====================================================
+          CODE AUDIT MODAL
+      ====================================================== */}
 
       <CodeAuditModal
         isOpen={
           isAuditModalOpen
         }
+
         onClose={() =>
-          setIsAuditModalOpen(false)
+          setIsAuditModalOpen(
+            false
+          )
         }
       />
 
