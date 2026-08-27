@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { FarmersProfile, UserProfile } from '../types';
+import { FarmerProfile, UserProfile } from '../types';
 import { User, ShieldCheck, MapPin, Save, LogOut, Check, AlertCircle, Sparkles, Building2 } from 'lucide-react';
 
 interface ProfileViewProps {
   userProfile: UserProfile;
   farmerProfile: FarmerProfile;
   onSaveUserProfile: (profile: Partial<UserProfile>) => Promise<boolean>;
-  onSaveFarmersProfile: (profile: Partial<FarmersProfile>) => Promise<boolean>;
+  onSaveFarmerProfile: (profile: Partial<FarmerProfile>) => Promise<boolean>;
   onLogout: () => void;
 }
 
@@ -14,7 +14,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   userProfile,
   farmerProfile,
   onSaveUserProfile,
-  onSaveFarmersProfile,
+  onSaveFarmerProfile,
   onLogout,
 }) => {
   // Personal Info Form State
@@ -25,12 +25,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [state, setState] = useState(userProfile.state || 'Uttar Pradesh');
 
   // Farm Info Form State
-  const [farmName, setFarmName] = useState(farmersProfile.farm_name || '');
-  const [farmLocation, setFarmLocation] = useState(farmersProfile.farm_location || '');
-  const [farmSize, setFarmSize] = useState(farmersProfile.farm_size || '5 Acres');
-  const [farmingType, setFarmingType] = useState(farmersProfile.farming_type || 'organic');
-  const [farmDistrict, setFarmDistrict] = useState(farmersProfile.district || district || '');
-  const [farmState, setFarmState] = useState(farmersProfile.state || state || 'Uttar Pradesh');
+  const [farmName, setFarmName] = useState(farmerProfile.farm_name || '');
+  const [farmLocation, setFarmLocation] = useState(farmerProfile.farm_location || '');
+  const [farmSize, setFarmSize] = useState(farmerProfile.farm_size || '5 Acres');
+  const [farmingType, setFarmingType] = useState(farmerProfile.farming_type || 'organic');
+  const [farmDistrict, setFarmDistrict] = useState(farmerProfile.district || district || '');
+  const [farmState, setFarmState] = useState(farmerProfile.state || state || 'Uttar Pradesh');
 
   // Feedback states
   const [personalMsg, setPersonalMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -67,7 +67,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setFarmMsg(null);
 
     try {
-      const ok = await onSaveFarmersProfile({
+      const ok = await onSaveFarmerProfile({
         farm_name: farmName.trim(),
         farm_location: farmLocation.trim(),
         farm_size: farmSize.trim(),
