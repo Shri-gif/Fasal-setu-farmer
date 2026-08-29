@@ -530,40 +530,44 @@ export default function App() {
   // SAVE PRODUCT
   // =========================================================
 
-  const getFinalProductPricing = async (basePrice: number) => {
-    const { data, error } = await supabase
-      .from('platform_settings')
-      .select('platform_fee, platform_fee_type')
-      .eq('id', 1)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    const feeValue = Number(data?.platform_fee ?? 0);
-    const feeType = String(data?.platform_fee_type ?? 'percentage').toLowerCase();
-    const fee = feeType === 'fixed' || feeType === 'fixed_amount' || feeType === 'fixed amount'
-      ? feeValue
-      : (basePrice * feeValue) / 100;
-
-    return {
-      fee: Math.round((fee + Number.EPSILON) * 100) / 100,
-      finalPrice: Math.round((basePrice + fee + Number.EPSILON) * 100) / 100,
-      feeType: feeType === 'fixed' || feeType === 'fixed_amount' || feeType === 'fixed amount' ? 'fixed' : 'percentage',
-      feeValue: Number.isFinite(feeValue) ? feeValue : 0,
-    };
-  };
-
   const handleSaveProduct = async (
     productData: Partial<Product>
   ): Promise<boolean> => {
     try {
-      const basePrice = Number(productData.price_per_unit ?? 0);
+      // Platform fee is applied here as the final source of truth.
+      const { data: feeSettings, error: feeError } = await supabase
+        .from('platform_settings')
+        .select('platform_fee, platform_fee_type')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (feeError) throw feeError;
+      if (!feeSettings) {
+        throw new Error('Platform fee settings are not configured.');
+      }
+
+      const basePrice = Number(productData.price_per_unit);
+      const feeValue = Number(feeSettings.platform_fee) || 0;
+      const feeType = String(feeSettings.platform_fee_type || 'percentage').toLowerCase();
+
       if (!Number.isFinite(basePrice) || basePrice <= 0) {
         throw new Error('Please provide a valid product price.');
       }
 
-      const pricing = await getFinalProductPricing(basePrice);
+      const feeAmount = feeType === 'fixed'
+        ? feeValue
+        : (basePrice * feeValue) / 100;
 
+      const finalPrice = Number((basePrice + feeAmount).toFixed(2));
+      const normalizedProductData: Partial<Product> = {
+        ...productData,
+        // price_per_unit is intentionally the final customer-facing price.
+        price_per_unit: finalPrice,
+        platform_fee: Number(feeAmount.toFixed(2)),
+        platform_fee_type: feeType,
+        platform_fee_value: feeValue,
+        customer_price: finalPrice,
+      };
       // -----------------------------------------------------
       // UPDATE EXISTING PRODUCT
       // -----------------------------------------------------
@@ -581,18 +585,13 @@ export default function App() {
         } = await supabase
           .from('products')
           .update({
-            ...productData,
-            price_per_unit: pricing.finalPrice,
-            customer_price: pricing.finalPrice,
-            platform_fee: pricing.fee,
-            platform_fee_type: pricing.feeType,
-            platform_fee_value: pricing.feeValue,
+            ...normalizedProductData,
             updated_at:
               new Date().toISOString(),
           })
           .eq(
             'id',
-            productData.id
+            normalizedProductData.id
           )
           .eq(
             'farmer_id',
@@ -615,7 +614,7 @@ export default function App() {
         );
 
         showToast(
-          'Produce updated successfully! ✓'
+          `Produce updated successfully! Final customer price ₹${finalPrice.toLocaleString('en-IN')} ✓`
         );
 
         return true;
@@ -636,61 +635,50 @@ export default function App() {
           farmerProfile.id,
 
         category_id:
-          productData.category_id ||
+          normalizedProductData.category_id ||
           null,
 
         name:
-          productData.name ||
+          normalizedProductData.name ||
           'Produce',
 
         description:
-          productData.description ||
+          normalizedProductData.description ||
           null,
 
         price_per_unit:
-          pricing.finalPrice,
-
-        customer_price:
-          pricing.finalPrice,
-
-        platform_fee:
-          pricing.fee,
-
-        platform_fee_type:
-          pricing.feeType,
-
-        platform_fee_value:
-          pricing.feeValue,
+          normalizedProductData.price_per_unit ||
+          0,
 
         unit:
-          productData.unit ||
+          normalizedProductData.unit ||
           'kg',
 
         stock:
-          productData.stock ??
+          normalizedProductData.stock ??
           10,
 
         harvest_date:
-          productData.harvest_date ||
+          normalizedProductData.harvest_date ||
           new Date()
             .toISOString()
             .split('T')[0],
 
         farm_location:
-          productData.farm_location ||
+          normalizedProductData.farm_location ||
           farmerProfile.farm_location ||
           null,
 
         image_url:
-          productData.image_url ||
+          normalizedProductData.image_url ||
           null,
 
         is_active:
-          productData.is_active ??
+          normalizedProductData.is_active ??
           true,
 
         is_available:
-          productData.is_available ??
+          normalizedProductData.is_available ??
           true,
       };
 
@@ -717,7 +705,7 @@ export default function App() {
       }
 
       showToast(
-        'New produce added to catalog! 🎉'
+        `New produce added. Final customer price ₹${finalPrice.toLocaleString('en-IN')} 🎉`
       );
 
       return true;
