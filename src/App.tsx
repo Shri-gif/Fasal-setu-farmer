@@ -530,10 +530,40 @@ export default function App() {
   // SAVE PRODUCT
   // =========================================================
 
+  const getFinalProductPricing = async (basePrice: number) => {
+    const { data, error } = await supabase
+      .from('platform_settings')
+      .select('platform_fee, platform_fee_type')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const feeValue = Number(data?.platform_fee ?? 0);
+    const feeType = String(data?.platform_fee_type ?? 'percentage').toLowerCase();
+    const fee = feeType === 'fixed' || feeType === 'fixed_amount' || feeType === 'fixed amount'
+      ? feeValue
+      : (basePrice * feeValue) / 100;
+
+    return {
+      fee: Math.round((fee + Number.EPSILON) * 100) / 100,
+      finalPrice: Math.round((basePrice + fee + Number.EPSILON) * 100) / 100,
+      feeType: feeType === 'fixed' || feeType === 'fixed_amount' || feeType === 'fixed amount' ? 'fixed' : 'percentage',
+      feeValue: Number.isFinite(feeValue) ? feeValue : 0,
+    };
+  };
+
   const handleSaveProduct = async (
     productData: Partial<Product>
   ): Promise<boolean> => {
     try {
+      const basePrice = Number(productData.price_per_unit ?? 0);
+      if (!Number.isFinite(basePrice) || basePrice <= 0) {
+        throw new Error('Please provide a valid product price.');
+      }
+
+      const pricing = await getFinalProductPricing(basePrice);
+
       // -----------------------------------------------------
       // UPDATE EXISTING PRODUCT
       // -----------------------------------------------------
@@ -552,6 +582,11 @@ export default function App() {
           .from('products')
           .update({
             ...productData,
+            price_per_unit: pricing.finalPrice,
+            customer_price: pricing.finalPrice,
+            platform_fee: pricing.fee,
+            platform_fee_type: pricing.feeType,
+            platform_fee_value: pricing.feeValue,
             updated_at:
               new Date().toISOString(),
           })
@@ -613,8 +648,19 @@ export default function App() {
           null,
 
         price_per_unit:
-          productData.price_per_unit ||
-          0,
+          pricing.finalPrice,
+
+        customer_price:
+          pricing.finalPrice,
+
+        platform_fee:
+          pricing.fee,
+
+        platform_fee_type:
+          pricing.feeType,
+
+        platform_fee_value:
+          pricing.feeValue,
 
         unit:
           productData.unit ||

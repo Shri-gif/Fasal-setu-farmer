@@ -40,6 +40,10 @@ export interface Product {
   name: string;
   description?: string | null;
   price_per_unit: number;
+  customer_price?: number | null;
+  platform_fee?: number | null;
+  platform_fee_type?: string | null;
+  platform_fee_value?: number | null;
   unit: string;
   stock: number;
   harvest_date?: string | null;
