@@ -2,6 +2,7 @@ import { supabase } from "./supabase.js";
 import { showToast } from "./app.js";
 
 const form = document.getElementById("productForm");
+
 const productName = document.getElementById("productName");
 const productCategory = document.getElementById("productCategory");
 const productDescription = document.getElementById("productDescription");
@@ -12,6 +13,7 @@ const harvestDate = document.getElementById("harvestDate");
 const farmLocation = document.getElementById("farmLocation");
 const imageUrl = document.getElementById("imageUrl");
 const isAvailable = document.getElementById("isAvailable");
+
 const saveProductBtn = document.getElementById("saveProductBtn");
 const formMessage = document.getElementById("formMessage");
 const pageTitle = document.getElementById("pageTitle");
@@ -22,11 +24,16 @@ const productId = urlParams.get("id");
 let editingProduct = null;
 
 
+/* =========================================================
+   PAGE LOAD
+========================================================= */
+
 document.addEventListener("DOMContentLoaded", async () => {
 
     try {
 
         await checkLogin();
+
         await loadCategories();
 
         if (productId) {
@@ -35,7 +42,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     } catch (error) {
 
-        console.error(error);
+        console.error("Page load error:", error);
 
         showMessage(
             error.message || "Something went wrong.",
@@ -47,13 +54,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 
+/* =========================================================
+   LOGIN CHECK
+========================================================= */
+
 async function checkLogin() {
 
     const {
         data: { user },
         error
     } = await supabase.auth.getUser();
-
 
     if (error || !user) {
 
@@ -65,13 +75,18 @@ async function checkLogin() {
 
     }
 
+    return user;
+
 }
 
+
+/* =========================================================
+   LOAD CATEGORIES
+========================================================= */
 
 async function loadCategories() {
 
     if (!productCategory) return;
-
 
     const {
         data,
@@ -80,6 +95,10 @@ async function loadCategories() {
         .from("product_categories")
         .select("*");
 
+    /*
+    If category table cannot be loaded,
+    use default categories.
+    */
 
     if (
         error ||
@@ -87,7 +106,12 @@ async function loadCategories() {
         data.length === 0
     ) {
 
+        console.warn(
+            "Could not load categories. Using default categories."
+        );
+
         productCategory.innerHTML = `
+
             <option value="vegetables">
                 Vegetables (सब्जियां)
             </option>
@@ -107,6 +131,7 @@ async function loadCategories() {
             <option value="spices">
                 Spices (मसाले)
             </option>
+
         `;
 
         return;
@@ -147,14 +172,19 @@ async function loadCategories() {
 }
 
 
+/* =========================================================
+   GET CURRENT FARMER
+========================================================= */
+
 async function getCurrentFarmer() {
 
     const {
-        data: { user }
+        data: { user },
+        error: authError
     } = await supabase.auth.getUser();
 
 
-    if (!user) {
+    if (authError || !user) {
 
         throw new Error(
             "Please login first."
@@ -163,13 +193,28 @@ async function getCurrentFarmer() {
     }
 
 
+    /*
+    Find existing farmer profile
+    */
+
     const {
-        data: farmer
+        data: farmer,
+        error: farmerError
     } = await supabase
         .from("farmers")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
+
+
+    if (farmerError) {
+
+        throw new Error(
+            "Could not load farmer profile: " +
+            farmerError.message
+        );
+
+    }
 
 
     if (farmer) {
@@ -178,6 +223,10 @@ async function getCurrentFarmer() {
 
     }
 
+
+    /*
+    Create farmer profile if missing
+    */
 
     const {
         data: newFarmer,
@@ -207,7 +256,10 @@ async function getCurrentFarmer() {
 
     if (error) {
 
-        throw error;
+        throw new Error(
+            "Could not create farmer profile: " +
+            error.message
+        );
 
     }
 
@@ -217,11 +269,9 @@ async function getCurrentFarmer() {
 }
 
 
-/*
------------------------------------------
-LOAD PLATFORM SETTINGS
------------------------------------------
-*/
+/* =========================================================
+   GET PLATFORM SETTINGS
+========================================================= */
 
 async function getPlatformSettings() {
 
@@ -230,12 +280,21 @@ async function getPlatformSettings() {
         error
     } = await supabase
         .from("platform_settings")
-        .select("*")
+        .select(`
+            id,
+            platform_fee,
+            platform_fee_type
+        `)
         .eq("id", 1)
         .maybeSingle();
 
 
     if (error) {
+
+        console.error(
+            "Platform settings error:",
+            error
+        );
 
         throw new Error(
             "Could not load platform fee settings: " +
@@ -245,60 +304,206 @@ async function getPlatformSettings() {
     }
 
 
-    return data;
+    /*
+    IMPORTANT:
+    Do not silently continue with zero fee
+    if settings row doesn't exist.
+    */
+
+    if (!data) {
+
+        throw new Error(
+            "Platform fee settings are not configured. Please configure platform fee in admin settings first."
+        );
+
+    }
+
+
+    /*
+    Read and validate fee
+    */
+
+    const feeValue =
+        Number(data.platform_fee);
+
+
+    if (
+        Number.isNaN(feeValue) ||
+        feeValue < 0
+    ) {
+
+        throw new Error(
+            "Invalid platform fee configured in admin settings."
+        );
+
+    }
+
+
+    /*
+    Normalize fee type
+    */
+
+    let feeType =
+        String(
+            data.platform_fee_type || "percentage"
+        )
+        .trim()
+        .toLowerCase();
+
+
+    if (
+        feeType === "fixed amount" ||
+        feeType === "fixed_amount"
+    ) {
+
+        feeType = "fixed";
+
+    }
+
+
+    if (
+        feeType !== "percentage" &&
+        feeType !== "fixed"
+    ) {
+
+        throw new Error(
+            "Invalid platform fee type. Use percentage or fixed."
+        );
+
+    }
+
+
+    const settings = {
+
+        id:
+            data.id,
+
+        platform_fee:
+            feeValue,
+
+        platform_fee_type:
+            feeType
+
+    };
+
+
+    /*
+    DEBUG
+    */
+
+    console.log(
+        "✅ PLATFORM SETTINGS LOADED:",
+        settings
+    );
+
+
+    return settings;
 
 }
 
 
-/*
------------------------------------------
-CALCULATE PLATFORM FEE
------------------------------------------
-*/
+/* =========================================================
+   CALCULATE PRODUCT PRICING
+========================================================= */
 
 function calculateProductPricing(
     farmerPrice,
     settings
 ) {
 
+    const basePrice =
+        Number(farmerPrice);
+
+
+    if (
+        Number.isNaN(basePrice) ||
+        basePrice < 0
+    ) {
+
+        throw new Error(
+            "Invalid farmer price."
+        );
+
+    }
+
+
+    if (!settings) {
+
+        throw new Error(
+            "Platform fee settings are missing."
+        );
+
+    }
+
+
     const feeValue =
         Number(
-            settings?.platform_fee ?? 0
+            settings.platform_fee
         );
 
 
     const feeType =
         String(
-            settings?.platform_fee_type ??
+            settings.platform_fee_type ||
             "percentage"
-        ).toLowerCase();
+        )
+        .trim()
+        .toLowerCase();
+
+
+    if (
+        Number.isNaN(feeValue) ||
+        feeValue < 0
+    ) {
+
+        throw new Error(
+            "Invalid platform fee value."
+        );
+
+    }
 
 
     let platformFeeAmount = 0;
 
 
-    if (feeValue > 0) {
+    /* -----------------------------------------
+       PERCENTAGE FEE
+    ----------------------------------------- */
 
-        if (
-            feeType === "fixed" ||
-            feeType === "fixed_amount" ||
-            feeType === "fixed amount"
-        ) {
+    if (feeType === "percentage") {
 
-            platformFeeAmount =
-                feeValue;
-
-        } else {
-
-            platformFeeAmount =
-                farmerPrice *
-                feeValue /
-                100;
-
-        }
+        platformFeeAmount =
+            basePrice *
+            feeValue /
+            100;
 
     }
 
+
+    /* -----------------------------------------
+       FIXED FEE
+    ----------------------------------------- */
+
+    else if (feeType === "fixed") {
+
+        platformFeeAmount =
+            feeValue;
+
+    }
+
+
+    else {
+
+        throw new Error(
+            "Unsupported platform fee type."
+        );
+
+    }
+
+
+    /*
+    Round platform fee to 2 decimals
+    */
 
     platformFeeAmount =
         Math.round(
@@ -309,33 +514,58 @@ function calculateProductPricing(
         ) / 100;
 
 
+    /*
+    Customer price
+    */
+
     const customerPrice =
         Math.round(
             (
-                farmerPrice +
+                basePrice +
                 platformFeeAmount +
                 Number.EPSILON
             ) * 100
         ) / 100;
 
 
-    return {
+    const result = {
 
-        platformFeeAmount,
-        customerPrice,
-        feeType,
-        feeValue
+        farmerPrice:
+            basePrice,
+
+        platformFeeAmount:
+            platformFeeAmount,
+
+        customerPrice:
+            customerPrice,
+
+        feeType:
+            feeType,
+
+        feeValue:
+            feeValue
 
     };
+
+
+    /*
+    DEBUG
+    */
+
+    console.log(
+        "💰 CALCULATED PRODUCT PRICING:",
+        result
+    );
+
+
+    return result;
 
 }
 
 
-/*
------------------------------------------
-LOAD PRODUCT FOR EDITING
------------------------------------------
-*/
+/* =========================================================
+   LOAD PRODUCT FOR EDITING
+========================================================= */
 
 async function loadProduct(id) {
 
@@ -354,10 +584,17 @@ async function loadProduct(id) {
         .maybeSingle();
 
 
-    if (
-        error ||
-        !data
-    ) {
+    if (error) {
+
+        throw new Error(
+            "Could not load product: " +
+            error.message
+        );
+
+    }
+
+
+    if (!data) {
 
         throw new Error(
             "Product not found or access denied."
@@ -370,6 +607,10 @@ async function loadProduct(id) {
         data;
 
 
+    /*
+    Page title
+    */
+
     if (pageTitle) {
 
         pageTitle.textContent =
@@ -378,6 +619,10 @@ async function loadProduct(id) {
     }
 
 
+    /*
+    Button
+    */
+
     if (saveProductBtn) {
 
         saveProductBtn.innerHTML =
@@ -385,6 +630,10 @@ async function loadProduct(id) {
 
     }
 
+
+    /*
+    Product fields
+    */
 
     if (productName) {
 
@@ -411,8 +660,9 @@ async function loadProduct(id) {
 
 
     /*
-    Farmer ko hamesha uska
-    original/base price dikhayenge.
+    IMPORTANT:
+    Farmer sees original/base price,
+    NOT customer price.
     */
 
     if (productPrice) {
@@ -473,11 +723,9 @@ async function loadProduct(id) {
 }
 
 
-/*
------------------------------------------
-SAVE PRODUCT
------------------------------------------
-*/
+/* =========================================================
+   SAVE / UPDATE PRODUCT
+========================================================= */
 
 if (form) {
 
@@ -493,9 +741,17 @@ if (form) {
                 setButtonLoading(true);
 
 
+                /* -----------------------------------------
+                   FARMER
+                ----------------------------------------- */
+
                 const farmer =
                     await getCurrentFarmer();
 
+
+                /* -----------------------------------------
+                   BASIC PRODUCT DATA
+                ----------------------------------------- */
 
                 const name =
                     productName.value.trim();
@@ -510,7 +766,7 @@ if (form) {
 
 
                 /*
-                Farmer ka entered rate
+                Farmer entered price
                 */
 
                 const price =
@@ -546,6 +802,10 @@ if (form) {
                 const available =
                     isAvailable.checked;
 
+
+                /* -----------------------------------------
+                   VALIDATION
+                ----------------------------------------- */
 
                 if (!name) {
 
@@ -589,21 +849,17 @@ if (form) {
                 }
 
 
-                /*
-                -----------------------------------------
-                LOAD CURRENT ADMIN PLATFORM FEE
-                -----------------------------------------
-                */
+                /* -----------------------------------------
+                   LOAD PLATFORM FEE
+                ----------------------------------------- */
 
                 const platformSettings =
                     await getPlatformSettings();
 
 
-                /*
-                -----------------------------------------
-                CALCULATE FINAL CUSTOMER PRICE
-                -----------------------------------------
-                */
+                /* -----------------------------------------
+                   CALCULATE PRICING
+                ----------------------------------------- */
 
                 const pricing =
                     calculateProductPricing(
@@ -613,19 +869,46 @@ if (form) {
 
 
                 /*
-                -----------------------------------------
-                PRODUCT DATA
-                -----------------------------------------
-
-                price_per_unit
-                = farmer ka original price
-
-                platform_fee
-                = is product par actual calculated fee
-
-                customer_price
-                = final price jo customer ko dikhana hai
+                IMPORTANT DEBUG
                 */
+
+                console.log(
+                    "================================"
+                );
+
+                console.log(
+                    "PRODUCT PRICE:",
+                    price
+                );
+
+                console.log(
+                    "PLATFORM FEE VALUE:",
+                    pricing.feeValue
+                );
+
+                console.log(
+                    "PLATFORM FEE TYPE:",
+                    pricing.feeType
+                );
+
+                console.log(
+                    "CALCULATED PLATFORM FEE:",
+                    pricing.platformFeeAmount
+                );
+
+                console.log(
+                    "FINAL CUSTOMER PRICE:",
+                    pricing.customerPrice
+                );
+
+                console.log(
+                    "================================"
+                );
+
+
+                /* -----------------------------------------
+                   PRODUCT DATA
+                ----------------------------------------- */
 
                 const productData = {
 
@@ -643,15 +926,19 @@ if (form) {
 
 
                     /*
+                    -----------------------------------------
                     FARMER BASE PRICE
+                    -----------------------------------------
                     */
 
                     price_per_unit:
-                        price,
+                        pricing.farmerPrice,
 
 
                     /*
-                    ACTUAL CALCULATED PLATFORM FEE
+                    -----------------------------------------
+                    ACTUAL PLATFORM FEE AMOUNT
+                    -----------------------------------------
                     */
 
                     platform_fee:
@@ -659,19 +946,34 @@ if (form) {
 
 
                     /*
-                    CURRENT FEE SETTINGS
+                    -----------------------------------------
+                    PLATFORM FEE TYPE
+                    -----------------------------------------
                     */
 
                     platform_fee_type:
                         pricing.feeType,
 
 
+                    /*
+                    -----------------------------------------
+                    PLATFORM FEE VALUE
+                    -----------------------------------------
+                    Example:
+                    5 = 5%
+                    or
+                    10 = ₹10 fixed
+                    -----------------------------------------
+                    */
+
                     platform_fee_value:
                         pricing.feeValue,
 
 
                     /*
+                    -----------------------------------------
                     FINAL CUSTOMER PRICE
+                    -----------------------------------------
                     */
 
                     customer_price:
@@ -708,9 +1010,52 @@ if (form) {
                 };
 
 
+                /*
+                -----------------------------------------
+                FINAL VALIDATION
+                -----------------------------------------
+                */
+
+                if (
+                    productData.platform_fee === null ||
+                    productData.platform_fee === undefined
+                ) {
+
+                    throw new Error(
+                        "Platform fee calculation failed."
+                    );
+
+                }
+
+
+                if (
+                    productData.customer_price === null ||
+                    productData.customer_price === undefined
+                ) {
+
+                    throw new Error(
+                        "Customer price calculation failed."
+                    );
+
+                }
+
+
+                /*
+                -----------------------------------------
+                UPDATE EXISTING PRODUCT
+                -----------------------------------------
+                */
+
                 if (editingProduct) {
 
+                    console.log(
+                        "Updating product:",
+                        productData
+                    );
+
+
                     const {
+                        data,
                         error
                     } = await supabase
                         .from("products")
@@ -718,7 +1063,13 @@ if (form) {
                         .eq(
                             "id",
                             editingProduct.id
-                        );
+                        )
+                        .eq(
+                            "farmer_id",
+                            farmer.id
+                        )
+                        .select()
+                        .single();
 
 
                     if (error) {
@@ -726,20 +1077,46 @@ if (form) {
                         throw error;
 
                     }
+
+
+                    console.log(
+                        "✅ PRODUCT UPDATED:",
+                        data
+                    );
 
 
                     showMessage(
-                        "Produce updated successfully! Final customer price has been updated. ✅",
+                        "Produce updated successfully! Platform fee and customer price updated. ✅",
                         "success"
                     );
 
-                } else {
+                }
+
+
+                /*
+                -----------------------------------------
+                INSERT NEW PRODUCT
+                -----------------------------------------
+                */
+
+                else {
+
+                    console.log(
+                        "Inserting product:",
+                        productData
+                    );
+
 
                     const {
+                        data,
                         error
                     } = await supabase
                         .from("products")
-                        .insert(productData);
+                        .insert(
+                            productData
+                        )
+                        .select()
+                        .single();
 
 
                     if (error) {
@@ -747,6 +1124,12 @@ if (form) {
                         throw error;
 
                     }
+
+
+                    console.log(
+                        "✅ PRODUCT INSERTED:",
+                        data
+                    );
 
 
                     showMessage(
@@ -757,18 +1140,24 @@ if (form) {
                 }
 
 
+                /*
+                -----------------------------------------
+                REDIRECT
+                -----------------------------------------
+                */
+
                 setTimeout(() => {
 
                     window.location.href =
                         "products.html";
 
-                }, 800);
+                }, 1000);
 
 
             } catch (error) {
 
                 console.error(
-                    "Save error:",
+                    "❌ SAVE PRODUCT ERROR:",
                     error
                 );
 
@@ -791,12 +1180,34 @@ if (form) {
 }
 
 
+/* =========================================================
+   SHOW MESSAGE
+========================================================= */
+
 function showMessage(
     message,
     type
 ) {
 
-    if (!formMessage) return;
+    if (!formMessage) {
+
+        /*
+        Fallback if formMessage doesn't exist
+        */
+
+        if (type === "error") {
+
+            console.error(message);
+
+        } else {
+
+            console.log(message);
+
+        }
+
+        return;
+
+    }
 
 
     formMessage.style.display =
@@ -807,19 +1218,30 @@ function showMessage(
         message;
 
 
-    formMessage.style.background =
-        type === "success"
-            ? "#e8f7ed"
-            : "#fdebea";
+    if (type === "success") {
 
+        formMessage.style.background =
+            "#e8f7ed";
 
-    formMessage.style.color =
-        type === "success"
-            ? "#16803c"
-            : "#b52d29";
+        formMessage.style.color =
+            "#16803c";
+
+    } else {
+
+        formMessage.style.background =
+            "#fdebea";
+
+        formMessage.style.color =
+            "#b52d29";
+
+    }
 
 }
 
+
+/* =========================================================
+   BUTTON LOADING
+========================================================= */
 
 function setButtonLoading(
     loading
@@ -838,11 +1260,18 @@ function setButtonLoading(
             : "1";
 
 
-    saveProductBtn.innerHTML =
-        loading
-            ? "Saving..."
-            : editingProduct
-            ? `Update Produce <span>→</span>`
-            : `Add Produce <span>→</span>`;
+    if (loading) {
+
+        saveProductBtn.innerHTML =
+            "Saving...";
+
+    } else {
+
+        saveProductBtn.innerHTML =
+            editingProduct
+                ? `Update Produce <span>→</span>`
+                : `Add Produce <span>→</span>`;
+
+    }
 
 }
