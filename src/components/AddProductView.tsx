@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Product, ProductCategory } from '../types';
+import { supabase } from '../supabase';
 import { ArrowLeft, Save, Sparkles, Check, AlertCircle, Image as ImageIcon } from 'lucide-react';
 
 interface AddProductViewProps {
@@ -32,7 +33,17 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
   const [name, setName] = useState(existingProduct?.name || '');
   const [categoryId, setCategoryId] = useState(existingProduct?.category_id || categories[0]?.id || '');
   const [description, setDescription] = useState(existingProduct?.description || '');
-  const [price, setPrice] = useState<string>(existingProduct ? String(existingProduct.price_per_unit) : '');
+  const getInitialFarmerPrice = (product: Product | null) => {
+    if (!product) return '';
+    if (product.customer_price != null && product.platform_fee != null) {
+      return String(Number(product.customer_price) - Number(product.platform_fee));
+    }
+    return String(product.price_per_unit);
+  };
+
+  const [price, setPrice] = useState<string>(getInitialFarmerPrice(existingProduct));
+  const [platformFeeType, setPlatformFeeType] = useState<'percentage' | 'fixed'>('percentage');
+  const [platformFeeValue, setPlatformFeeValue] = useState(0);
   const [unit, setUnit] = useState(existingProduct?.unit || 'kg');
   const [stock, setStock] = useState<string>(existingProduct ? String(existingProduct.stock) : '50');
   const [harvestDate, setHarvestDate] = useState(
@@ -53,7 +64,7 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
       setName(existingProduct.name);
       setCategoryId(existingProduct.category_id);
       setDescription(existingProduct.description || '');
-      setPrice(String(existingProduct.price_per_unit));
+      setPrice(getInitialFarmerPrice(existingProduct));
       setUnit(existingProduct.unit || 'kg');
       setStock(String(existingProduct.stock));
       setHarvestDate(existingProduct.harvest_date || new Date().toISOString().split('T')[0]);
@@ -62,6 +73,47 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
       setIsAvailable(existingProduct.is_available);
     }
   }, [existingProduct, defaultFarmLocation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPlatformFee = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('platform_settings')
+          .select('platform_fee, platform_fee_type')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!cancelled && data) {
+          const value = Number(data.platform_fee ?? 0);
+          const type = String(data.platform_fee_type ?? 'percentage').toLowerCase();
+          setPlatformFeeValue(Number.isFinite(value) ? value : 0);
+          setPlatformFeeType(type === 'fixed' || type === 'fixed_amount' || type === 'fixed amount' ? 'fixed' : 'percentage');
+        }
+      } catch (error) {
+        console.warn('Platform fee could not be loaded:', error);
+        if (!cancelled) {
+          setPlatformFeeValue(0);
+          setPlatformFeeType('percentage');
+        }
+      }
+    };
+
+    loadPlatformFee();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const farmerPrice = Number(price) || 0;
+  const calculatedPlatformFee = platformFeeType === 'fixed'
+    ? platformFeeValue
+    : (farmerPrice * platformFeeValue) / 100;
+  const totalProductPrice = Math.round((farmerPrice + calculatedPlatformFee + Number.EPSILON) * 100) / 100;
 
   const handleApplyPreset = (preset: typeof POPULAR_PRESETS[0]) => {
     setName(preset.name);
@@ -111,6 +163,8 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
         name: name.trim(),
         category_id: categoryId,
         description: description.trim() || null,
+        // Send the farmer's base price to App.tsx.
+        // App.tsx applies the latest platform fee and saves the final price.
         price_per_unit: parsedPrice,
         unit: unit,
         stock: parsedStock,
@@ -294,6 +348,23 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
                 <option value="box">box / crate (पेटी / टोकरा)</option>
               </select>
             </div>
+          </div>
+
+          {/* Final Customer Price */}
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-700">Your Product Price</span>
+              <span className="font-bold text-slate-900">₹{farmerPrice.toLocaleString('en-IN')} / {unit}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 mt-2 text-sm">
+              <span className="font-semibold text-slate-700">Platform Fee ({platformFeeType === 'percentage' ? `${platformFeeValue}%` : 'fixed'})</span>
+              <span className="font-bold text-slate-900">+ ₹{calculatedPlatformFee.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between gap-3">
+              <span className="font-black text-emerald-900">Total Customer Price</span>
+              <span className="text-xl font-black text-emerald-800">₹{totalProductPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / {unit}</span>
+            </div>
+            <p className="text-[11px] text-emerald-800 mt-2">This final price will be shown to customers.</p>
           </div>
 
           {/* Stock and Harvest Date Grid */}
