@@ -495,3 +495,354 @@ if (form) {
 
                 const farmer =
                     await getCurrentFarmer();
+
+
+                const name =
+                    productName.value.trim();
+
+
+                const categoryId =
+                    productCategory.value;
+
+
+                const description =
+                    productDescription.value.trim();
+
+
+                /*
+                Farmer ka entered rate
+                */
+
+                const price =
+                    Number(
+                        productPrice.value
+                    );
+
+
+                const unit =
+                    productUnit.value;
+
+
+                const stock =
+                    Number(
+                        productStock.value
+                    );
+
+
+                const harvest =
+                    harvestDate.value ||
+                    null;
+
+
+                const location =
+                    farmLocation.value.trim();
+
+
+                const image =
+                    imageUrl.value.trim() ||
+                    null;
+
+
+                const available =
+                    isAvailable.checked;
+
+
+                if (!name) {
+
+                    throw new Error(
+                        "Please enter product name."
+                    );
+
+                }
+
+
+                if (!categoryId) {
+
+                    throw new Error(
+                        "Please select a category."
+                    );
+
+                }
+
+
+                if (
+                    Number.isNaN(price) ||
+                    price < 0
+                ) {
+
+                    throw new Error(
+                        "Please enter a valid price."
+                    );
+
+                }
+
+
+                if (
+                    Number.isNaN(stock) ||
+                    stock < 0
+                ) {
+
+                    throw new Error(
+                        "Please enter a valid stock."
+                    );
+
+                }
+
+
+                /*
+                -----------------------------------------
+                LOAD CURRENT ADMIN PLATFORM FEE
+                -----------------------------------------
+                */
+
+                const platformSettings =
+                    await getPlatformSettings();
+
+
+                /*
+                -----------------------------------------
+                CALCULATE FINAL CUSTOMER PRICE
+                -----------------------------------------
+                */
+
+                const pricing =
+                    calculateProductPricing(
+                        price,
+                        platformSettings
+                    );
+
+
+                /*
+                -----------------------------------------
+                PRODUCT DATA
+                -----------------------------------------
+
+                price_per_unit
+                = farmer ka original price
+
+                platform_fee
+                = is product par actual calculated fee
+
+                customer_price
+                = final price jo customer ko dikhana hai
+                */
+
+                const productData = {
+
+                    farmer_id:
+                        farmer.id,
+
+                    category_id:
+                        categoryId,
+
+                    name:
+                        name,
+
+                    description:
+                        description || null,
+
+
+                    /*
+                    FARMER BASE PRICE
+                    */
+
+                    price_per_unit:
+                        price,
+
+
+                    /*
+                    ACTUAL CALCULATED PLATFORM FEE
+                    */
+
+                    platform_fee:
+                        pricing.platformFeeAmount,
+
+
+                    /*
+                    CURRENT FEE SETTINGS
+                    */
+
+                    platform_fee_type:
+                        pricing.feeType,
+
+
+                    platform_fee_value:
+                        pricing.feeValue,
+
+
+                    /*
+                    FINAL CUSTOMER PRICE
+                    */
+
+                    customer_price:
+                        pricing.customerPrice,
+
+
+                    unit:
+                        unit,
+
+
+                    harvest_date:
+                        harvest,
+
+
+                    image_url:
+                        image,
+
+
+                    is_active:
+                        true,
+
+
+                    is_available:
+                        available,
+
+
+                    stock:
+                        stock,
+
+
+                    farm_location:
+                        location || null
+
+                };
+
+
+                if (editingProduct) {
+
+                    const {
+                        error
+                    } = await supabase
+                        .from("products")
+                        .update(productData)
+                        .eq(
+                            "id",
+                            editingProduct.id
+                        );
+
+
+                    if (error) {
+
+                        throw error;
+
+                    }
+
+
+                    showMessage(
+                        "Produce updated successfully! Final customer price has been updated. ✅",
+                        "success"
+                    );
+
+                } else {
+
+                    const {
+                        error
+                    } = await supabase
+                        .from("products")
+                        .insert(productData);
+
+
+                    if (error) {
+
+                        throw error;
+
+                    }
+
+
+                    showMessage(
+                        "Produce added successfully! Platform fee applied. 🎉",
+                        "success"
+                    );
+
+                }
+
+
+                setTimeout(() => {
+
+                    window.location.href =
+                        "products.html";
+
+                }, 800);
+
+
+            } catch (error) {
+
+                console.error(
+                    "Save error:",
+                    error
+                );
+
+
+                showMessage(
+                    error.message ||
+                    "Could not save product.",
+                    "error"
+                );
+
+            } finally {
+
+                setButtonLoading(false);
+
+            }
+
+        }
+    );
+
+}
+
+
+function showMessage(
+    message,
+    type
+) {
+
+    if (!formMessage) return;
+
+
+    formMessage.style.display =
+        "block";
+
+
+    formMessage.textContent =
+        message;
+
+
+    formMessage.style.background =
+        type === "success"
+            ? "#e8f7ed"
+            : "#fdebea";
+
+
+    formMessage.style.color =
+        type === "success"
+            ? "#16803c"
+            : "#b52d29";
+
+}
+
+
+function setButtonLoading(
+    loading
+) {
+
+    if (!saveProductBtn) return;
+
+
+    saveProductBtn.disabled =
+        loading;
+
+
+    saveProductBtn.style.opacity =
+        loading
+            ? "0.7"
+            : "1";
+
+
+    saveProductBtn.innerHTML =
+        loading
+            ? "Saving..."
+            : editingProduct
+            ? `Update Produce <span>→</span>`
+            : `Add Produce <span>→</span>`;
+
+}
