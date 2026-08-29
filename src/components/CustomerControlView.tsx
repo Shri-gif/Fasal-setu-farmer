@@ -43,8 +43,8 @@ export const CustomerControlView: React.FC<CustomerControlViewProps> = ({
     const loadPlatformFee = async () => {
       try {
         const { data, error } = await supabase
-          .from('platform_settings')
-          .select('platform_fee_amount')
+          .from('products')
+          .select('platform_fee')
           .limit(1)
           .maybeSingle();
 
@@ -54,7 +54,7 @@ export const CustomerControlView: React.FC<CustomerControlViewProps> = ({
         }
 
         if (data) {
-          setPlatformFee(Number(data.platform_fee_amount) || 0);
+          setPlatformFee(Number(data.platform_fee) || 0);
         }
       } catch (error) {
         console.error('Platform fee loading error:', error);
