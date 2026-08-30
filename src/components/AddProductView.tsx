@@ -75,29 +75,44 @@ export const AddProductView: React.FC<AddProductViewProps> = ({
 
   useEffect(() => {
     let cancelled = false;
+useEffect(() => {
+  let cancelled = false;
 
-    const loadPlatformFee = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('platform_settings')
-          .select('platform_fee, platform_fee_type')
-          .eq('id', 1)
-          .maybeSingle();
+  const loadPlatformFee = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('platform_fee, platform_fee_type')
+        .eq('id', 1)
+        .maybeSingle();
 
-        if (!cancelled && !error && data) {
-          setPlatformFee(Number(data.platform_fee) || 0);
-          setPlatformFeeType(
-            String(data.platform_fee_type || 'percentage').toLowerCase() === 'fixed'
-              ? 'fixed'
-              : 'percentage'
-          );
-        }
-      } catch (error) {
-        console.warn('Platform fee load warning:', error);
+      if (error) {
+        throw error;
       }
-    };
 
-    loadPlatformFee();
+      if (!cancelled && data) {
+        setPlatformFee(Number(data.platform_fee) || 0);
+
+        setPlatformFeeType(
+          String(data.platform_fee_type || 'percentage')
+            .toLowerCase()
+            .trim() === 'fixed'
+            ? 'fixed'
+            : 'percentage'
+        );
+      }
+    } catch (error) {
+      console.error('Platform fee load error:', error);
+    }
+  };
+
+  loadPlatformFee();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
 
     if (existingProduct) {
       setName(existingProduct.name);
