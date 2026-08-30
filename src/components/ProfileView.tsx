@@ -1,327 +1,224 @@
 import React, { useState } from 'react';
-import { FarmerProfile, UserProfile } from '../types';
-import { User, ShieldCheck, MapPin, Save, LogOut, Check, AlertCircle, Sparkles, Building2 } from 'lucide-react';
+import { 
+  User, 
+  ShieldCheck, 
+  MapPin, 
+  Phone, 
+  Mail, 
+  Sprout, 
+  Building2, 
+  CheckCircle2, 
+  Edit3, 
+  Save, 
+  FileText,
+  BadgeCheck
+} from 'lucide-react';
+import { FarmerProfile, Language } from '../types';
 
 interface ProfileViewProps {
-  userProfile: UserProfile;
-  farmerProfile: FarmerProfile;
-  onSaveUserProfile: (profile: Partial<UserProfile>) => Promise<boolean>;
-  onSaveFarmerProfile: (profile: Partial<FarmerProfile>) => Promise<boolean>;
-  onLogout: () => void;
+  farmer: FarmerProfile;
+  onUpdateProfile: (updated: FarmerProfile) => void;
+  language: Language;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
-  userProfile,
-  farmerProfile,
-  onSaveUserProfile,
-  onSaveFarmerProfile,
-  onLogout,
+  farmer,
+  onUpdateProfile,
+  language,
 }) => {
-  // Personal Info Form State
-  const [fullName, setFullName] = useState(userProfile.full_name || '');
-  const [mobile, setMobile] = useState(userProfile.mobile || '');
-  const [village, setVillage] = useState(userProfile.village || '');
-  const [district, setDistrict] = useState(userProfile.district || '');
-  const [state, setState] = useState(userProfile.state || 'Uttar Pradesh');
+  const isHi = language === 'hi';
 
-  // Farm Info Form State
-  const [farmName, setFarmName] = useState(farmerProfile.farm_name || '');
-  const [farmLocation, setFarmLocation] = useState(farmerProfile.farm_location || '');
-  const [farmSize, setFarmSize] = useState(farmerProfile.farm_size || '5 Acres');
-  const [farmingType, setFarmingType] = useState(farmerProfile.farming_type || 'organic');
-  const [farmDistrict, setFarmDistrict] = useState(farmerProfile.district || district || '');
-  const [farmState, setFarmState] = useState(farmerProfile.state || state || 'Uttar Pradesh');
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState<FarmerProfile>(farmer);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Feedback states
-  const [personalMsg, setPersonalMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [farmMsg, setFarmMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isSavingPersonal, setIsSavingPersonal] = useState(false);
-  const [isSavingFarm, setIsSavingFarm] = useState(false);
-
-  const handleSavePersonal = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSavingPersonal(true);
-    setPersonalMsg(null);
-
-    try {
-      const ok = await onSaveUserProfile({
-        full_name: fullName.trim(),
-        mobile: mobile.trim(),
-        village: village.trim(),
-        district: district.trim(),
-        state: state.trim(),
-      });
-      if (ok) {
-        setPersonalMsg({ type: 'success', text: 'Personal details saved successfully! ✓' });
-      }
-    } catch (err: any) {
-      setPersonalMsg({ type: 'error', text: err?.message || 'Failed to save personal profile.' });
-    } finally {
-      setIsSavingPersonal(false);
-    }
-  };
-
-  const handleSaveFarm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingFarm(true);
-    setFarmMsg(null);
-
-    try {
-      const ok = await onSaveFarmerProfile({
-        farm_name: farmName.trim(),
-        farm_location: farmLocation.trim(),
-        farm_size: farmSize.trim(),
-        farming_type: farmingType,
-        district: farmDistrict.trim(),
-        state: farmState.trim(),
-      });
-      if (ok) {
-        setFarmMsg({ type: 'success', text: 'Farm business details saved successfully! ✓' });
-      }
-    } catch (err: any) {
-      setFarmMsg({ type: 'error', text: err?.message || 'Failed to save farm details.' });
-    } finally {
-      setIsSavingFarm(false);
-    }
+    onUpdateProfile(formData);
+    setIsEditing(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-16">
-      {/* Profile Header Hero */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 text-center shadow-xs">
-        <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-4xl shadow-xs mb-3">
-          👨‍🌾
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-200">
+      
+      {/* Header */}
+      <div className="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-xl font-bold shadow-xs">
+            {farmer.name.charAt(0)}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-stone-900 font-serif">{farmer.name}</h1>
+              <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                <BadgeCheck className="w-3.5 h-3.5 text-emerald-700" />
+                {isHi ? 'प्रमाणित किसान' : 'Verified Farmer'}
+              </span>
+            </div>
+            <p className="text-xs text-stone-500 font-mono mt-0.5">
+              Kisan ID: {farmer.kisan_id} • {farmer.village}, {farmer.district}
+            </p>
+          </div>
         </div>
-        <h1 className="text-xl font-black text-slate-900">
-          {fullName || 'Farmers Profile'}
-        </h1>
-        <p className="text-xs text-slate-500 mt-0.5">{userProfile.email || 'farmer@khet2ghar.in'}</p>
 
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 mt-3">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Verified Producer • सत्यापित किसान</span>
-        </div>
+        {!isEditing && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Edit3 className="w-4 h-4 text-stone-600" />
+            <span>{isHi ? 'प्रोफ़ाइल बदलें' : 'Edit Profile'}</span>
+          </button>
+        )}
       </div>
 
-      {/* Personal Details Form */}
-      <section className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
-        <div className="mb-4">
-          <h2 className="text-base font-bold text-slate-900">
-            Personal Information (व्यक्तिगत जानकारी)
-          </h2>
-          <p className="text-xs text-slate-500">Manage your contact and residential address</p>
+      {saveSuccess && (
+        <div className="p-3.5 bg-emerald-100 border border-emerald-300 rounded-xl text-emerald-900 text-xs sm:text-sm flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+          <span className="font-medium">{isHi ? 'किसान प्रोफ़ाइल सफलतापूर्वक अपडेट हो गई!' : 'Farmer profile updated successfully!'}</span>
         </div>
+      )}
 
-        {personalMsg && (
-          <div
-            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
-              personalMsg.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
-            }`}
-          >
-            {personalMsg.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span>{personalMsg.text}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSavePersonal} className="space-y-3.5" id="profileForm">
+      {/* Main Profile Form / Details */}
+      <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+        <form onSubmit={handleSubmit} className="space-y-6 text-xs sm:text-sm">
+          
+          {/* Section 1: Personal & Farm Info */}
           <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Full Name (पूरा नाम) *
-            </label>
-            <input
-              type="text"
-              required
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="e.g. Vimal Shukla"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-            />
+            <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Sprout className="w-4 h-4 text-emerald-600" />
+              <span>{isHi ? 'व्यक्तिगत व कृषि भूमि विवरण' : 'Personal & Land Details'}</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'किसान का पूरा नाम' : 'Full Name'}</label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'मोबाइल नंबर' : 'Phone Number'}</label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'गाँव / कस्बा' : 'Village'}</label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={formData.village}
+                  onChange={(e) => setFormData({ ...formData, village: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'जिला और राज्य' : 'District & State'}</label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={`${formData.district}, ${formData.state}`}
+                  onChange={(e) => {
+                    const parts = e.target.value.split(',');
+                    setFormData({ ...formData, district: parts[0]?.trim() || '', state: parts[1]?.trim() || '' });
+                  }}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'कुल कृषि भूमि (एकड़ में)' : 'Total Land (Acres)'}</label>
+                <input
+                  type="number"
+                  disabled={!isEditing}
+                  value={formData.total_land_acres}
+                  onChange={(e) => setFormData({ ...formData, total_land_acres: Number(e.target.value) })}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-stone-700 mb-1 font-bold">{isHi ? 'पिन कोड' : 'Pincode'}</label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  value={formData.pincode}
+                  onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 disabled:opacity-80 disabled:bg-stone-100 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Mobile Number (मोबाइल नंबर) *
-              </label>
-              <input
-                type="tel"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-                placeholder="10-digit mobile number"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-              />
-            </div>
+          {/* KYC Status & Badges */}
+          <div className="pt-4 border-t border-stone-200">
+            <h3 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-amber-600" />
+              <span>{isHi ? 'KYC और सुरक्षा सत्यापन' : 'KYC & Verification Badges'}</span>
+            </h3>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Village / Town (गाँव / कस्बा)
-              </label>
-              <input
-                type="text"
-                value={village}
-                onChange={(e) => setVillage(e.target.value)}
-                placeholder="e.g. Palia Kalan"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-              />
-            </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-stone-50 border border-emerald-300 rounded-xl p-3 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-stone-900 text-xs">{isHi ? 'आधार KYC सत्यापित' : 'Aadhaar Verified'}</div>
+                  <div className="text-[10px] text-stone-500">UIDAI Registered</div>
+                </div>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                District (ज़िला)
-              </label>
-              <input
-                type="text"
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                placeholder="e.g. Lakhimpur Kheri"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-              />
-            </div>
+              <div className="bg-stone-50 border border-emerald-300 rounded-xl p-3 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-stone-900 text-xs">{isHi ? 'भूमि खसरा लिंक' : 'Land Record Linked'}</div>
+                  <div className="text-[10px] text-stone-500">UP Bhulekh Sync</div>
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                State (राज्य)
-              </label>
-              <input
-                type="text"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="e.g. Uttar Pradesh"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-              />
+              <div className="bg-stone-50 border border-emerald-300 rounded-xl p-3 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-stone-900 text-xs">{isHi ? 'बैंक खाता सत्यापित' : 'Bank Account Verified'}</div>
+                  <div className="text-[10px] text-stone-500">NPCI Penny Drop OK</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSavingPersonal}
-            className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition-colors shadow-xs"
-          >
-            {isSavingPersonal ? 'Saving Profile...' : 'Save Personal Details'}
-          </button>
-        </form>
-      </section>
-
-      {/* Farm Details Form */}
-      <section className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
-        <div className="mb-4">
-          <h2 className="text-base font-bold text-slate-900">
-            Farm Information (खेत का विवरण) 🌾
-          </h2>
-          <p className="text-xs text-slate-500">Showcase your farm size and agricultural methods</p>
-        </div>
-
-        {farmMsg && (
-          <div
-            className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
-              farmMsg.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-rose-50 text-rose-800 border border-rose-200'
-            }`}
-          >
-            {farmMsg.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            <span>{farmMsg.text}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSaveFarm} className="space-y-3.5" id="farmForm">
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Farm / Producer Brand Name (फार्म का नाम) *
-            </label>
-            <input
-              type="text"
-              required
-              value={farmName}
-              onChange={(e) => setFarmName(e.target.value)}
-              placeholder="e.g. Shukla Organic Krishi Farm"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Farm Size (खेत का आकार / रकबा)
-              </label>
-              <input
-                type="text"
-                value={farmSize}
-                onChange={(e) => setFarmSize(e.target.value)}
-                placeholder="e.g. 7.5 Acres / Bigha"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                Farming Type (खेती का प्रकार)
-              </label>
-              <select
-                value={farmingType}
-                onChange={(e) => setFarmingType(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:outline-none focus:border-emerald-600"
+          {isEditing && (
+            <div className="pt-4 border-t border-stone-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="px-4 py-2 rounded-xl border border-stone-300 text-stone-600 hover:bg-stone-100 text-xs font-bold cursor-pointer"
               >
-                <option value="organic">Organic Farming (जैविक खेती)</option>
-                <option value="natural">Natural Farming (प्राकृतिक खेती)</option>
-                <option value="conventional">Conventional Farming (पारंपरिक खेती)</option>
-                <option value="mixed">Mixed Crop Farming (मिश्रित खेती)</option>
-                <option value="hydroponic">Hydroponic / Greenhouse</option>
-              </select>
+                {isHi ? 'रद्द करें' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isHi ? 'बदलाव सेव करें' : 'Save Changes'}</span>
+              </button>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Farm Location (खेत का पता / ग्राम)
-            </label>
-            <input
-              type="text"
-              value={farmLocation}
-              onChange={(e) => setFarmLocation(e.target.value)}
-              placeholder="e.g. Near River Basin, Palia Kalan"
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSavingFarm}
-            className="w-full py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition-colors shadow-xs"
-          >
-            {isSavingFarm ? 'Saving Farm Info...' : 'Save Farm Details'}
-          </button>
+          )}
         </form>
-      </section>
+      </div>
 
-      {/* Account Settings & Logout */}
-      <section className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
-        <h2 className="text-base font-bold text-slate-900 mb-3">
-          Account Operations
-        </h2>
-        <button
-          onClick={onLogout}
-          id="logoutBtn"
-          className="w-full p-4 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center justify-between transition-colors group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center text-lg">
-              🚪
-            </div>
-            <div className="text-left">
-              <strong className="text-sm font-bold block">Sign Out (लॉग आउट)</strong>
-              <span className="text-xs text-rose-600/80">Exit current farmer session</span>
-            </div>
-          </div>
-          <span className="text-base font-bold group-hover:translate-x-1 transition-transform">
-            →
-          </span>
-        </button>
-      </section>
     </div>
   );
 };

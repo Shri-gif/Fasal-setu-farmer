@@ -1,331 +1,294 @@
 import React, { useState } from 'react';
-import { Order, Product } from '../types';
-import { Search, Phone, MapPin, Calendar, Clock, CheckCircle2, AlertCircle, Truck, PackageCheck, UserCheck } from 'lucide-react';
+import { 
+  ShoppingBag, 
+  Search, 
+  CheckCircle2, 
+  Clock, 
+  Truck, 
+  PackageCheck, 
+  AlertCircle, 
+  Phone, 
+  MapPin, 
+  IndianRupee,
+  FileText,
+  ShieldCheck,
+  ChevronDown
+} from 'lucide-react';
+import { Order, OrderStatus, Language } from '../types';
 
 interface OrdersViewProps {
   orders: Order[];
-  products: Product[];
-  onUpdateOrderStatus: (orderId: string, newStatus: string) => void;
-  onNavigate: (tab: string) => void;
+  onUpdateStatus: (orderId: string, status: OrderStatus) => void;
+  language: Language;
 }
 
 export const OrdersView: React.FC<OrdersViewProps> = ({
   orders,
-  products,
-  onUpdateOrderStatus,
-  onNavigate,
+  onUpdateStatus,
+  language,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const isHi = language === 'hi';
 
-  const productMap = new Map(products.map((p) => [p.id, p]));
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
-  // Metrics
-  const totalCount = orders.length;
-  const pendingCount = orders.filter(
-    (o) => (o.order_status || o.status || '').toLowerCase() === 'pending' || (o.order_status || o.status || '').toLowerCase() === 'new'
-  ).length;
-  const completedCount = orders.filter(
-    (o) => (o.order_status || o.status || '').toLowerCase() === 'completed' || (o.order_status || o.status || '').toLowerCase() === 'delivered'
-  ).length;
-
-  const filteredOrders = orders.filter((order) => {
-    const status = (order.order_status || order.status || 'pending').toLowerCase();
-    const product = order.product || productMap.get(order.product_id);
-    const search = searchQuery.toLowerCase();
-
-    const matchesSearch =
-      !searchQuery ||
-      order.id.toLowerCase().includes(search) ||
-      order.customer_name.toLowerCase().includes(search) ||
-      (order.customer_mobile && order.customer_mobile.includes(search)) ||
-      (product?.name && product.name.toLowerCase().includes(search)) ||
-      (order.city && order.city.toLowerCase().includes(search));
-
-    const matchesStatus =
-      statusFilter === 'all' ||
-      status === statusFilter ||
-      (statusFilter === 'pending' && (status === 'pending' || status === 'new')) ||
-      (statusFilter === 'completed' && (status === 'completed' || status === 'delivered'));
-
+  const filteredOrders = orders.filter((ord) => {
+    const matchesSearch = ord.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ord.buyer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ord.items.some(i => i.product_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesStatus = statusFilter === 'all' || ord.order_status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
+  const getStatusBadge = (status: OrderStatus) => {
+    switch (status) {
+      case 'delivered':
+        return {
+          bg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+          label: isHi ? 'सफलतापूर्वक डिलीवर' : 'Delivered (Wallet Credited)',
+          icon: CheckCircle2,
+        };
+      case 'shipped':
+        return {
+          bg: 'bg-blue-100 text-blue-800 border-blue-300',
+          label: isHi ? 'रास्ते में / डिस्पैच' : 'Shipped & In-Transit',
+          icon: Truck,
+        };
+      case 'confirmed':
+        return {
+          bg: 'bg-amber-100 text-amber-800 border-amber-300',
+          label: isHi ? 'स्वीकृत / पैकिंग जारी' : 'Confirmed & Packing',
+          icon: PackageCheck,
+        };
+      case 'pending':
+      default:
+        return {
+          bg: 'bg-stone-100 text-stone-700 border-stone-300',
+          label: isHi ? 'नया ऑर्डर (लंबित)' : 'New Pending Order',
+          icon: Clock,
+        };
+    }
+  };
+
   return (
-    <div className="space-y-5 pb-14">
+    <div className="space-y-6 animate-in fade-in duration-200">
+      
       {/* Header */}
-      <div>
-        <div className="inline-flex items-center gap-1 text-emerald-800 text-xs font-bold uppercase tracking-wider">
-          <span>📦</span> Orders Fulfillment
-        </div>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-          Customer Orders (ग्राहकों के आर्डर)
-        </h1>
-        <p className="text-xs text-slate-500">
-          Track harvest dispatches, update order status, and contact buyers
-        </p>
-      </div>
-
-      {/* Summary Stat Badges */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-center">
-          <span className="text-[11px] font-semibold text-slate-500 block">Total Orders</span>
-          <strong className="text-xl font-black text-slate-900">{totalCount}</strong>
-        </div>
-        <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 text-center">
-          <span className="text-[11px] font-semibold text-amber-800 block">🟡 Pending Action</span>
-          <strong className="text-xl font-black text-amber-800">{pendingCount}</strong>
-        </div>
-        <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200 text-center">
-          <span className="text-[11px] font-semibold text-emerald-800 block">🟢 Completed</span>
-          <strong className="text-xl font-black text-emerald-800">{completedCount}</strong>
-        </div>
-      </div>
-
-      {/* Search & Filter Controls */}
-      <div className="flex flex-col sm:flex-row gap-2.5">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by order ID, customer name, mobile, or crop..."
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
-          />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-xs">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-stone-900 font-serif tracking-tight flex items-center gap-2">
+            <span>{isHi ? 'ऑर्डर और मंडी बिक्री' : 'Orders & Mandi Sales'}</span>
+            <span className="text-xs font-sans bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+              {orders.length} {isHi ? 'कुल ऑर्डर' : 'Orders'}
+            </span>
+          </h1>
+          <p className="text-xs sm:text-sm text-stone-500 mt-1">
+            {isHi ? 'डिलीवरी होते ही 100% किसान कमाई आपके वॉलेट में उपलब्ध हो जाती है' : '100% Farmer net proceeds are credited directly to wallet on delivery'}
+          </p>
         </div>
 
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:border-emerald-600"
-        >
-          <option value="all">All Orders (सभी आर्डर)</option>
-          <option value="pending">Pending / New</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="packed">Packed / Ready</option>
-          <option value="dispatched">Dispatched</option>
-          <option value="completed">Completed / Delivered</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        {/* Quick status tabs */}
+        <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 text-xs">
+          {['all', 'pending', 'confirmed', 'shipped', 'delivered'].map((st) => (
+            <button
+              key={st}
+              onClick={() => setStatusFilter(st)}
+              className={`px-3 py-1.5 rounded-lg capitalize font-semibold transition-all cursor-pointer ${
+                statusFilter === st
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              {st === 'all' ? (isHi ? 'सभी' : 'All') : st}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Orders List */}
       {filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center">
-          <div className="text-5xl mb-3">📦</div>
-          <h2 className="text-base font-bold text-slate-800">No Orders Found</h2>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
-            {searchQuery || statusFilter !== 'all'
-              ? 'No customer orders matched your selected filters.'
-              : 'When customers place orders for your farm produce, they will appear here.'}
-          </p>
-          <button
-            onClick={() => onNavigate('products')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800"
-          >
-            Check Produce Inventory
-          </button>
+        <div className="bg-white border border-stone-200 rounded-2xl p-12 text-center text-stone-500 space-y-3">
+          <ShoppingBag className="w-10 h-10 mx-auto text-stone-400" />
+          <h3 className="text-base font-bold text-stone-800">{isHi ? 'कोई ऑर्डर नहीं मिला' : 'No orders found'}</h3>
+          <p className="text-xs">{isHi ? 'चयनित फ़िल्टर के अनुसार कोई ऑर्डर मौजूद नहीं है।' : 'No orders match the selected filter.'}</p>
         </div>
       ) : (
         <div className="space-y-4">
           {filteredOrders.map((order) => {
-            const product = order.product || productMap.get(order.product_id);
-            const status = (order.order_status || order.status || 'pending').toLowerCase();
-            const paymentStatus = (order.payment_status || 'pending').toLowerCase();
-            const orderDate = new Date(order.created_at).toLocaleDateString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            });
+            const badge = getStatusBadge(order.order_status);
+            const BadgeIcon = badge.icon;
+            const isExpanded = expandedOrder === order.id;
 
             return (
-              <article
+              <div
                 key={order.id}
-                className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden"
+                className="bg-white border border-stone-200 hover:border-emerald-300 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all"
               >
-                {/* Order Top Bar */}
-                <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 text-[11px] font-extrabold uppercase">
-                      ORDER
-                    </span>
-                    <strong className="text-xs font-mono font-bold text-slate-800">
-                      #{order.id.slice(0, 10).toUpperCase()}
-                    </strong>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {orderDate}
-                    </span>
-
-                    {/* Status Pill */}
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        status === 'completed' || status === 'delivered'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : status === 'confirmed'
-                          ? 'bg-blue-100 text-blue-800'
-                          : status === 'packed'
-                          ? 'bg-indigo-100 text-indigo-800'
-                          : status === 'dispatched'
-                          ? 'bg-purple-100 text-purple-800'
-                          : status === 'cancelled'
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      {status.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Main Order Details Grid */}
-                <div className="p-4 sm:p-5 space-y-4">
-                  {/* Customer and Delivery Information */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-slate-100 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px] mb-1">
-                        Buyer Details
+                {/* Order Summary Bar */}
+                <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  
+                  {/* Left: Order ID & Buyer */}
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-bold text-emerald-800 text-sm">
+                        {order.order_number}
                       </span>
-                      <div className="font-bold text-slate-900 text-sm">
-                        {order.customer_name}
-                      </div>
-                      {order.customer_mobile && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-slate-600">{order.customer_mobile}</span>
-                          <a
-                            href={`tel:${order.customer_mobile}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100"
-                          >
-                            <Phone className="w-3 h-3" /> Call Buyer
-                          </a>
-                        </div>
-                      )}
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${badge.bg}`}>
+                        <BadgeIcon className="w-3.5 h-3.5" />
+                        <span>{badge.label}</span>
+                      </span>
+                      <span className="text-[11px] text-stone-500 font-mono">
+                        {new Date(order.created_at).toLocaleDateString('en-IN', {
+                          month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </span>
                     </div>
 
-                    <div>
-                      <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[10px] mb-1">
-                        Delivery Destination & Slot
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-700 pt-1">
+                      <span className="font-bold text-stone-900">{order.buyer_name}</span>
+                      <span className="text-stone-500 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-stone-400" />
+                        {order.buyer_phone}
                       </span>
-                      <div className="flex items-start gap-1.5 text-slate-700">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                        <span>
-                          {order.delivery_address}
-                          {order.city ? `, ${order.city}` : ''}
-                          {order.pincode ? ` - ${order.pincode}` : ''}
-                        </span>
-                      </div>
-                      {order.delivery_slot && (
-                        <div className="flex items-center gap-1 text-slate-500 mt-1">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          <span>Slot: {order.delivery_slot}</span>
-                        </div>
-                      )}
+                      <span className="text-stone-500 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-stone-400" />
+                        {order.buyer_location}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Itemized Harvest Card */}
-                  <div className="bg-slate-50 rounded-xl p-3.5 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-lg bg-emerald-100/70 text-emerald-900 flex items-center justify-center text-xl flex-shrink-0">
-                        🥬
+                  {/* Middle: Items Snippet */}
+                  <div className="text-xs text-stone-700">
+                    <div className="text-stone-500 text-[11px] uppercase font-bold tracking-wider">
+                      {isHi ? 'उत्पाद:' : 'Items:'}
+                    </div>
+                    {order.items.map((it, idx) => (
+                      <div key={idx} className="font-bold text-stone-900">
+                        {it.product_name} • {it.quantity} {it.unit}
                       </div>
-                      <div>
-                        <h3 className="font-bold text-sm text-slate-900">
-                          {product?.name || 'Fresh Farm Produce'}
-                        </h3>
-                        <p className="text-xs text-slate-500">
-                          Qty: <span className="font-bold text-slate-800">{order.quantity} {product?.unit || 'kg'}</span> × ₹{order.price_per_unit} per {product?.unit || 'unit'}
-                        </p>
+                    ))}
+                  </div>
+
+                  {/* Right: Net Farmer Earnings & Actions */}
+                  <div className="flex items-center justify-between lg:justify-end gap-4 border-t lg:border-t-0 pt-3 lg:pt-0 border-stone-100">
+                    <div className="text-left lg:text-right">
+                      <div className="text-[10px] uppercase tracking-wider text-emerald-800 font-bold">
+                        {isHi ? 'आपकी कुल कमाई (Net):' : 'Farmer Net Share:'}
+                      </div>
+                      <div className="text-lg font-black text-emerald-700 font-mono">
+                        ₹{order.farmer_net_earnings.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                      <div className="text-[10px] text-stone-500">
+                        {isHi ? 'खरीदार कुल:' : 'Buyer Grand Total:'} ₹{order.grand_total.toLocaleString('en-IN')}
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="text-base font-black text-slate-900">
-                        ₹{Number(order.total_amount || order.subtotal || 0).toLocaleString('en-IN')}
-                      </div>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          paymentStatus === 'paid'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-200 text-slate-700'
-                        }`}
+                    {/* Status Action Buttons */}
+                    <div className="flex items-center gap-2">
+                      {order.order_status === 'pending' && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'confirmed')}
+                          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                        >
+                          {isHi ? 'ऑर्डर स्वीकारें' : 'Accept Order'}
+                        </button>
+                      )}
+                      {order.order_status === 'confirmed' && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'shipped')}
+                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          <span>{isHi ? 'डिस्पैच करें' : 'Mark Shipped'}</span>
+                        </button>
+                      )}
+                      {order.order_status === 'shipped' && (
+                        <button
+                          onClick={() => onUpdateStatus(order.id, 'delivered')}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{isHi ? 'डिलीवर हुआ (वॉलेट में जमा)' : 'Confirm Delivery'}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                        className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl transition-colors cursor-pointer"
+                        title={isHi ? 'विस्तृत बिल देखें' : 'View Breakdown'}
                       >
-                        Payment: {paymentStatus.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Customer Notes */}
-                  {order.notes && (
-                    <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-100 text-amber-900 text-xs flex items-start gap-2">
-                      <span className="font-bold">📝 Note:</span>
-                      <span>{order.notes}</span>
-                    </div>
-                  )}
-
-                  {/* Order Status Action Selector */}
-                  <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-emerald-50/40 p-3 rounded-xl border border-emerald-100">
-                    <div className="text-xs font-semibold text-emerald-950 flex items-center gap-1.5">
-                      <Truck className="w-4 h-4 text-emerald-700" />
-                      <span>Update Dispatch Lifecycle:</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5">
-                      {status === 'pending' && (
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'confirmed')}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
-                        >
-                          Accept & Confirm ✓
-                        </button>
-                      )}
-                      {status === 'confirmed' && (
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'packed')}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs"
-                        >
-                          Mark as Packed 📦
-                        </button>
-                      )}
-                      {status === 'packed' && (
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'dispatched')}
-                          className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-xs"
-                        >
-                          Mark as Dispatched 🚚
-                        </button>
-                      )}
-                      {status === 'dispatched' && (
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'completed')}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs"
-                        >
-                          Mark Delivered / Completed 🎉
-                        </button>
-                      )}
-                      {status !== 'completed' && status !== 'cancelled' && (
-                        <button
-                          onClick={() => onUpdateOrderStatus(order.id, 'cancelled')}
-                          className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-all"
-                        >
-                          Reject / Cancel
-                        </button>
-                      )}
-                      {status === 'completed' && (
-                        <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4" /> Order Successfully Fulfilled
-                        </span>
-                      )}
+                        <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
                     </div>
                   </div>
                 </div>
-              </article>
+
+                {/* Expanded Invoice & Tax Breakdown Drawer */}
+                {isExpanded && (
+                  <div className="bg-stone-50 border-t border-stone-200 p-4 sm:p-5 space-y-4 animate-in slide-in-from-top-2 duration-150">
+                    <div className="flex items-center justify-between text-xs text-stone-600">
+                      <span className="font-bold uppercase tracking-wider text-emerald-800">
+                        {isHi ? 'पारदर्शी बिल व कर विवरण (Supabase 10% Fee + GST)' : 'Itemized Billing & Tax Breakdown (10% Fee + GST)'}
+                      </span>
+                      <span>Payment Method: <strong className="uppercase text-stone-900">{order.payment_method}</strong></span>
+                    </div>
+
+                    <div className="border border-stone-200 rounded-xl overflow-hidden text-xs bg-white">
+                      <table className="w-full text-left">
+                        <thead className="bg-stone-100 text-stone-700 font-bold border-b border-stone-200">
+                          <tr>
+                            <th className="p-3">Item</th>
+                            <th className="p-3 text-right">Farmer Base Rate</th>
+                            <th className="p-3 text-right">Platform Fee (10%)</th>
+                            <th className="p-3 text-right">GST Tax</th>
+                            <th className="p-3 text-right">Buyer Final Price</th>
+                            <th className="p-3 text-right">Farmer Net</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {order.items.map((it, i) => (
+                            <tr key={i} className="text-stone-700">
+                              <td className="p-3">
+                                <div className="font-bold text-stone-900">{it.product_name}</div>
+                                <div className="text-stone-500 text-[11px]">{it.quantity} {it.unit}</div>
+                              </td>
+                              <td className="p-3 text-right font-mono">₹{it.farmer_base_price} / {it.unit}</td>
+                              <td className="p-3 text-right font-mono text-amber-800 font-bold">+₹{it.platform_fee_amount} / {it.unit}</td>
+                              <td className="p-3 text-right font-mono text-blue-800 font-bold">+₹{it.gst_amount} / {it.unit}</td>
+                              <td className="p-3 text-right font-mono font-bold text-stone-900">₹{it.final_price} / {it.unit}</td>
+                              <td className="p-3 text-right font-mono font-black text-emerald-700">₹{it.farmer_base_price * it.quantity}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-stone-50 font-bold border-t border-stone-200 text-stone-800">
+                          <tr>
+                            <td colSpan={3} className="p-3">Total Order Breakdown</td>
+                            <td className="p-3 text-right text-blue-800 font-mono">GST: ₹{order.total_gst}</td>
+                            <td className="p-3 text-right text-stone-900 font-mono">Buyer Paid: ₹{order.grand_total}</td>
+                            <td className="p-3 text-right text-emerald-800 text-sm font-mono font-black">
+                              Net Farmer: ₹{order.farmer_net_earnings}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-900 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <span>
+                          {order.payment_status === 'released_to_wallet'
+                            ? (isHi ? 'भुगतान सीधे आपके वॉलेट में क्रेडिट हो चुका है। आप इसे तुरंत निकाल सकते हैं।' : 'Payment released to your wallet balance. Ready for instant withdrawal.')
+                            : (isHi ? 'भुगतान सुरक्षित एस्क्रो में है, डिलीवर होने पर तुरंत वॉलेट में क्रेडिट होगा।' : 'Payment held in escrow, automatically credited to your wallet balance upon delivery.')}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold uppercase text-[11px] text-emerald-900 bg-emerald-200/80 px-2.5 py-1 rounded-md border border-emerald-300">
+                        {order.payment_status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
