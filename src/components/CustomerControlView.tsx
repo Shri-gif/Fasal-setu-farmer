@@ -43,7 +43,7 @@ export const CustomerControlView: React.FC<CustomerControlViewProps> = ({
     const loadPlatformFee = async () => {
       try {
         const { data, error } = await supabase
-          .from('products')
+          .from('platform_settings')
           .select('platform_fee')
           .limit(1)
           .maybeSingle();
