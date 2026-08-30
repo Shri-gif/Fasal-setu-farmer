@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Search, Filter, Trash2, Edit3, CheckCircle2, AlertCircle, Eye, Calculator, IndianRupee, Layers } from 'lucide-react';
 import { Product, PlatformSetting, Language } from '../types';
-import { PRODUCT_CATEGORIES } from '../data/mockData';
 
 interface ProductsViewProps {
   products: Product[];
