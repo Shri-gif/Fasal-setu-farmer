@@ -32,7 +32,6 @@ import {
   saveSupabaseConfig,
   calculateProductPrices
 } from './supabase';
-import { INITIAL_FARMER_PROFILE } from './data/mockData';
 
 const FARMER_KEY = 'fasal_setu_farmer_profile';
 
