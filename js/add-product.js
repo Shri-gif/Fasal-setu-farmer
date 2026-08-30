@@ -1,251 +1,194 @@
-// ==========================================
-// FASAL SETU FARMER - ADD PRODUCT
-// Dynamic Platform Fee from site_settings
-// ==========================================
+import { supabase } from "./supabase.js";
+import { showToast } from "./app.js";
 
-let platformSettings = {
-  platform_fee: 0,
-  platform_fee_type: "percentage"
-};
+const form = document.getElementById("productForm");
+const productName = document.getElementById("productName");
+const productCategory = document.getElementById("productCategory");
+const productDescription = document.getElementById("productDescription");
+const productPrice = document.getElementById("productPrice");
+const productUnit = document.getElementById("productUnit");
+const productStock = document.getElementById("productStock");
+const harvestDate = document.getElementById("harvestDate");
+const farmLocation = document.getElementById("farmLocation");
+const imageUrl = document.getElementById("imageUrl");
+const isAvailable = document.getElementById("isAvailable");
+const saveProductBtn = document.getElementById("saveProductBtn");
+const formMessage = document.getElementById("formMessage");
+const pageTitle = document.getElementById("pageTitle");
+
+const urlParams = new URLSearchParams(window.location.search);
+const productId = urlParams.get("id");
+let editingProduct = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await loadPlatformSettings();
-
-  const priceInput = document.getElementById("product-price");
-
-  if (priceInput) {
-    priceInput.addEventListener("input", calculateFeePreview);
-  }
-
-  const addProductForm = document.getElementById("add-product-form");
-
-  if (addProductForm) {
-    addProductForm.addEventListener("submit", handleAddProductSubmit);
-  }
-
-  calculateFeePreview();
+    try {
+        await checkLogin();
+        await loadCategories();
+        if (productId) {
+            await loadProduct(productId);
+        }
+    } catch (error) {
+        console.error(error);
+        showMessage(error.message || "Something went wrong.", "error");
+    }
 });
 
-// ==========================================
-// LOAD PLATFORM SETTINGS FROM SUPABASE
-// ==========================================
-
-async function getPlatformSettings() {
-  const { data, error } = await supabaseClient
-    .from("site_settings")
-    .select("platform_fee, platform_fee_type")
-    .eq("id", 1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Platform settings error:", error);
-    throw error;
-  }
-
-  return data;
+async function checkLogin() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+        window.location.href = "index.html";
+        throw new Error("Please login first.");
+    }
 }
 
-async function loadPlatformSettings() {
-  try {
-    const data = await getPlatformSettings();
-
-    if (!data) {
-      console.warn("Platform fee settings are not configured.");
-      return;
+async function loadCategories() {
+    if (!productCategory) return;
+    const { data, error } = await supabase.from("product_categories").select("*");
+    if (error || !data || data.length === 0) {
+        productCategory.innerHTML = `
+            <option value="vegetables">Vegetables (सब्जियां)</option>
+            <option value="fruits">Fruits (फल)</option>
+            <option value="grains">Grains & Cereals (अनाज)</option>
+            <option value="pulses">Pulses & Dal (दालें)</option>
+            <option value="spices">Spices (मसाले)</option>
+        `;
+        return;
     }
 
-    platformSettings = {
-      platform_fee: Number(data.platform_fee) || 0,
-      platform_fee_type: data.platform_fee_type || "percentage"
-    };
-
-    console.log("Platform settings loaded:", platformSettings);
-
-  } catch (error) {
-    console.error("Could not load platform settings:", error);
-  }
+    productCategory.innerHTML = `<option value="">Select Category</option>`;
+    data.forEach(category => {
+        const name = category.name || category.title || category.category_name || category.slug || "Category";
+        const option = document.createElement("option");
+        option.value = category.id;
+        option.textContent = name;
+        productCategory.appendChild(option);
+    });
 }
 
-// ==========================================
-// CALCULATE PLATFORM FEE
-// ==========================================
+async function getCurrentFarmer() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Please login first.");
 
-function getFeeCalculation(basePrice) {
-  const price = Number(basePrice) || 0;
-  const fee = Number(platformSettings.platform_fee) || 0;
-  const feeType = platformSettings.platform_fee_type || "percentage";
+    const { data: farmer } = await supabase.from("farmers").select("*").eq("user_id", user.id).maybeSingle();
+    if (farmer) return farmer;
 
-  let platformFee = 0;
-
-  if (feeType === "percentage") {
-    platformFee = price * (fee / 100);
-  } else {
-    platformFee = fee;
-  }
-
-  platformFee = Math.round(platformFee * 100) / 100;
-
-  return {
-    farmerPrice: price,
-    feeValue: fee,
-    feeType,
-    platformFee,
-    customerPrice: price + platformFee
-  };
-}
-
-// ==========================================
-// LIVE PRICE PREVIEW
-// ==========================================
-
-function calculateFeePreview() {
-  const priceInput = document.getElementById("product-price");
-  const previewBox = document.getElementById("price-fee-preview");
-
-  if (!priceInput || !previewBox) return;
-
-  const farmerBasePrice = parseFloat(priceInput.value) || 0;
-
-  const {
-    feeValue,
-    feeType,
-    platformFee,
-    customerPrice
-  } = getFeeCalculation(farmerBasePrice);
-
-  const feeLabel =
-    feeType === "percentage"
-      ? `${feeValue}%`
-      : `₹${feeValue}`;
-
-  previewBox.innerHTML = `
-    <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs space-y-1.5 mt-2">
-
-      <div class="flex justify-between text-slate-300">
-        <span>आपका मूल्य (Farmer Rate):</span>
-        <span class="font-bold text-white font-mono">
-          ₹${farmerBasePrice}
-        </span>
-      </div>
-
-      <div class="flex justify-between text-emerald-400 font-medium">
-        <span>+ ${feeLabel} फ़सल सेतु सेवा शुल्क:</span>
-        <span class="font-bold font-mono">
-          + ₹${platformFee}
-        </span>
-      </div>
-
-      <hr class="border-slate-800"/>
-
-      <div class="flex justify-between text-white font-bold">
-        <span>ग्राहक हेतु अंतिम मूल्य:</span>
-        <span class="text-sm text-emerald-400 font-mono">
-          ₹${customerPrice}
-        </span>
-      </div>
-
-    </div>
-  `;
-}
-
-// ==========================================
-// ADD PRODUCT
-// ==========================================
-
-async function handleAddProductSubmit(e) {
-  e.preventDefault();
-
-  const submitBtn = document.getElementById("btn-submit-product");
-
-  if (submitBtn) {
-    submitBtn.disabled = true;
-  }
-
-  try {
-    // Always load latest settings before saving
-    await loadPlatformSettings();
-
-    const name = document.getElementById("product-name").value;
-    const category = document.getElementById("product-category").value;
-
-    const pricePerUnit =
-      parseFloat(document.getElementById("product-price").value) || 0;
-
-    const unit =
-      document.getElementById("product-unit").value || "kg";
-
-    const stock =
-      parseFloat(document.getElementById("product-stock").value) || 10;
-
-    const description =
-      document.getElementById("product-description").value || "";
-
-    const imageUrl =
-      document.getElementById("product-image-url")?.value || "";
-
-    const farmerId =
-      localStorage.getItem("farmer_id") || "farmer_1";
-
-    // Dynamic fee calculation
-    const {
-      feeValue,
-      feeType,
-      platformFee,
-      customerPrice
-    } = getFeeCalculation(pricePerUnit);
-
-    const payload = {
-      name,
-      category,
-
-      // Farmer's actual base price
-      price_per_unit: pricePerUnit,
-
-      // Dynamic platform fee
-      platform_fee_percent:
-        feeType === "percentage" ? feeValue : 0,
-
-      platform_fee_amount: platformFee,
-
-      // Final customer price
-      buyer_price: customerPrice,
-
-      unit,
-      stock,
-      description,
-      image_url: imageUrl,
-      farmer_id: farmerId,
-      status: "active",
-      created_at: new Date().toISOString()
-    };
-
-    const { error } = await supabaseClient
-      .from("products")
-      .insert([payload]);
+    const { data: newFarmer, error } = await supabase
+        .from("farmers")
+        .insert({
+            user_id: user.id,
+            farm_name: user.user_metadata?.farm_name || "My Farm",
+            farm_location: user.user_metadata?.farm_location || null,
+            verification_status: "pending"
+        })
+        .select()
+        .single();
 
     if (error) throw error;
+    return newFarmer;
+}
 
-    alert(
-      `✅ उत्पाद सफलतापूर्वक सूचीबद्ध हो गया!
+async function loadProduct(id) {
+    const farmer = await getCurrentFarmer();
+    const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", id)
+        .eq("farmer_id", farmer.id)
+        .maybeSingle();
 
-Farmer Rate: ₹${pricePerUnit}
-Platform Fee: ₹${platformFee}
-Customer Price: ₹${customerPrice}`
-    );
+    if (error || !data) throw new Error("Product not found or access denied.");
 
-    window.location.href = "dashboard.html";
+    editingProduct = data;
+    if (pageTitle) pageTitle.textContent = "Edit Produce ✏️";
+    if (saveProductBtn) saveProductBtn.innerHTML = `Update Produce <span>→</span>`;
 
-  } catch (err) {
-    console.error(err);
+    if (productName) productName.value = data.name || "";
+    if (productCategory) productCategory.value = data.category_id || "";
+    if (productDescription) productDescription.value = data.description || "";
+    if (productPrice) productPrice.value = data.price_per_unit ?? "";
+    if (productUnit) productUnit.value = data.unit || "kg";
+    if (productStock) productStock.value = data.stock ?? 0;
+    if (harvestDate) harvestDate.value = data.harvest_date || "";
+    if (farmLocation) farmLocation.value = data.farm_location || "";
+    if (imageUrl) imageUrl.value = data.image_url || "";
+    if (isAvailable) isAvailable.checked = data.is_available !== false;
+}
 
-    alert(
-      "त्रुटि: " +
-      (err.message || "Product could not be listed.")
-    );
+if (form) {
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        try {
+            setButtonLoading(true);
+            const farmer = await getCurrentFarmer();
 
-  } finally {
-    if (submitBtn) {
-      submitBtn.disabled = false;
-    }
-  }
+            const name = productName.value.trim();
+            const categoryId = productCategory.value;
+            const description = productDescription.value.trim();
+            const price = Number(productPrice.value);
+            const unit = productUnit.value;
+            const stock = Number(productStock.value);
+            const harvest = harvestDate.value || null;
+            const location = farmLocation.value.trim();
+            const image = imageUrl.value.trim() || null;
+            const available = isAvailable.checked;
+
+            if (!name) throw new Error("Please enter product name.");
+            if (!categoryId) throw new Error("Please select a category.");
+            if (Number.isNaN(price) || price < 0) throw new Error("Please enter a valid price.");
+            if (Number.isNaN(stock) || stock < 0) throw new Error("Please enter a valid stock.");
+
+            const productData = {
+                farmer_id: farmer.id,
+                category_id: categoryId,
+                name: name,
+                description: description || null,
+                price_per_unit: price,
+                unit: unit,
+                harvest_date: harvest,
+                image_url: image,
+                is_active: true,
+                is_available: available,
+                stock: stock,
+                farm_location: location || null
+            };
+
+            if (editingProduct) {
+                const { error } = await supabase.from("products").update(productData).eq("id", editingProduct.id);
+                if (error) throw error;
+                showMessage("Produce updated successfully! ✅", "success");
+            } else {
+                const { error } = await supabase.from("products").insert(productData);
+                if (error) throw error;
+                showMessage("Produce added successfully! 🎉", "success");
+            }
+
+            setTimeout(() => {
+                window.location.href = "products.html";
+            }, 800);
+        } catch (error) {
+            console.error("Save error:", error);
+            showMessage(error.message || "Could not save product.", "error");
+        } finally {
+            setButtonLoading(false);
+        }
+    });
+}
+
+function showMessage(message, type) {
+    if (!formMessage) return;
+    formMessage.style.display = "block";
+    formMessage.textContent = message;
+    formMessage.style.background = type === "success" ? "#e8f7ed" : "#fdebea";
+    formMessage.style.color = type === "success" ? "#16803c" : "#b52d29";
+}
+
+function setButtonLoading(loading) {
+    if (!saveProductBtn) return;
+    saveProductBtn.disabled = loading;
+    saveProductBtn.style.opacity = loading ? "0.7" : "1";
+    saveProductBtn.innerHTML = loading
+        ? "Saving..."
+        : editingProduct
+        ? `Update Produce <span>→</span>`
+        : `Add Produce <span>→</span>`;
 }

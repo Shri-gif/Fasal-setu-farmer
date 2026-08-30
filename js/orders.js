@@ -1,291 +1,267 @@
-// ==========================================
-// FASAL SETU FARMER - ORDERS & SLIP LOGIC
-// ==========================================
+/* =========================================================
+   KHET2GHAR FARMER
+   orders.js
+   Farmer Orders with interactive dispatch transitions
+   ========================================================= */
 
-let currentFarmerOrders = [];
+import { supabase } from "./supabase.js";
+import { formatRupees, showEmptyState, escapeHTML, showToast } from "./app.js";
 
-// Fetch and render orders for the logged-in farmer
-async function loadFarmerOrders() {
-  const farmerId = localStorage.getItem('farmer_id') || 'farmer_1';
-  const ordersTableBody = document.getElementById('orders-table-body');
-  const loadingIndicator = document.getElementById('orders-loading');
+let allOrders = [];
+let currentFarmer = null;
 
-  try {
-    if (loadingIndicator) loadingIndicator.style.display = 'block';
-
-    // Supabase query to get orders for this farmer
-    const { data: orders, error } = await supabaseClient
-      .from('orders')
-      .select('*, products(*)')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    currentFarmerOrders = orders || [];
-    renderOrdersList(currentFarmerOrders);
-  } catch (err) {
-    console.error('Error loading farmer orders:', err);
-    if (ordersTableBody) {
-      ordersTableBody.innerHTML = `
-        <tr>
-          <td colspan="7" class="text-center py-6 text-red-400">
-            ऑर्डर्स लोड करने में त्रुटि: ${err.message}
-          </td>
-        </tr>
-      `;
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        await loadFarmerOrders();
+        setupOrderSearch();
+        setupOrderFilter();
+    } catch (error) {
+        console.error("Orders page error:", error);
+        showOrdersError(error.message || "Unable to load orders.");
     }
-  } finally {
-    if (loadingIndicator) loadingIndicator.style.display = 'none';
-  }
+});
+
+async function getCurrentFarmer() {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+
+    if (!user) {
+        window.location.replace("index.html");
+        throw new Error("Please login first.");
+    }
+
+    const { data: farmer, error: farmerError } = await supabase
+        .from("farmers")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+    if (farmerError) throw farmerError;
+    if (!farmer) throw new Error("Farmer profile not found.");
+
+    return farmer;
 }
 
-// Render Orders Table
-function renderOrdersList(orders) {
-  const container = document.getElementById('orders-table-body');
-  if (!container) return;
+async function loadFarmerOrders() {
+    const farmer = await getCurrentFarmer();
+    currentFarmer = farmer;
 
-  if (!orders || orders.length === 0) {
-    container.innerHTML = `
-      <tr>
-        <td colspan="7" class="text-center py-12 text-slate-400">
-          <div class="empty-state">
-            <p class="text-lg font-semibold">अभी कोई आर्डर प्राप्त नहीं हुआ है।</p>
-            <p class="text-xs text-slate-500">जब ग्राहक आपके उत्पाद का आर्डर करेंगे, वह यहाँ दिखाई देगा।</p>
-          </div>
-        </td>
-      </tr>
-    `;
-    return;
-  }
+    const { data: orders, error: ordersError } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("farmer_id", farmer.id)
+        .order("created_at", { ascending: false });
 
-  container.innerHTML = orders.map((order) => {
-    const qty = Number(order.quantity) || 1;
-    const unitPrice = Number(order.price_per_unit) || (order.products ? order.products.price_per_unit : 0);
-    
-    // 10% Platform Fee Calculation
-    const baseSubtotal = qty * unitPrice;
-    const platformFee = Math.round(baseSubtotal * 0.10);
-    const totalAmount = Number(order.total_amount) || (baseSubtotal + platformFee);
-    const farmerNetEarnings = baseSubtotal;
+    if (ordersError) throw ordersError;
+
+    if (!orders || orders.length === 0) {
+        allOrders = [];
+        updateOrderSummary();
+        showEmptyOrders();
+        return;
+    }
+
+    const productIds = [...new Set(orders.map(o => o.product_id).filter(Boolean))];
+    let productMap = new Map();
+
+    if (productIds.length > 0) {
+        const { data: products } = await supabase
+            .from("products")
+            .select("id, name, image_url, unit, farm_location")
+            .in("id", productIds);
+
+        if (products) {
+            products.forEach(p => productMap.set(p.id, p));
+        }
+    }
+
+    allOrders = orders.map(order => ({
+        ...order,
+        product: productMap.get(order.product_id) || null
+    }));
+
+    updateOrderSummary();
+    renderOrders(allOrders);
+}
+
+function updateOrderSummary() {
+    const total = allOrders.length;
+    const pending = allOrders.filter(o => {
+        const s = String(o.order_status || o.status || "").toLowerCase();
+        return s === "pending" || s === "new";
+    }).length;
+
+    const completed = allOrders.filter(o => {
+        const s = String(o.order_status || o.status || "").toLowerCase();
+        return s === "completed" || s === "delivered";
+    }).length;
+
+    const totalEl = document.getElementById("totalOrders");
+    const pendingEl = document.getElementById("pendingOrders");
+    const completedEl = document.getElementById("completedOrders");
+
+    if (totalEl) totalEl.textContent = total;
+    if (pendingEl) pendingEl.textContent = pending;
+    if (completedEl) completedEl.textContent = completed;
+}
+
+function renderOrders(orders) {
+    const container = document.getElementById("ordersContainer");
+    const emptyState = document.getElementById("emptyOrders");
+
+    if (!container) return;
+
+    if (!orders || orders.length === 0) {
+        container.style.display = "none";
+        if (emptyState) emptyState.style.display = "block";
+        return;
+    }
+
+    if (emptyState) emptyState.style.display = "none";
+    container.style.display = "grid";
+    container.innerHTML = orders.map(order => createOrderCard(order)).join("");
+}
+
+function createOrderCard(order) {
+    const status = String(order.order_status || order.status || "pending").toLowerCase();
+    const paymentStatus = String(order.payment_status || "pending").toLowerCase();
+    const date = formatDate(order.created_at);
+    const product = order.product || {};
+    const productName = escapeHTML(product.name || order.product_name || "Farm Produce");
+    const quantity = Number(order.quantity || 1);
+    const unit = escapeHTML(product.unit || "kg");
+    const unitPrice = formatRupees(order.price_per_unit || 0);
+    const totalAmount = formatRupees(order.total_amount || order.subtotal || 0);
+
+    const customerName = escapeHTML(order.customer_name || "Customer");
+    const customerMobile = escapeHTML(order.customer_mobile || "");
+    const deliveryAddress = escapeHTML(order.delivery_address || "");
 
     return `
-      <tr class="hover:bg-slate-800/50 border-b border-slate-800 transition-colors">
-        <td class="py-3.5 px-4 font-mono font-bold text-emerald-400">#${order.id}</td>
-        <td class="py-3.5 px-4">
-          <p class="font-bold text-white">${order.customer_name || 'ग्राहक'}</p>
-          <p class="text-xs text-slate-400 font-mono">${order.customer_mobile || 'N/A'}</p>
-        </td>
-        <td class="py-3.5 px-4">
-          <p class="font-medium text-slate-200">${order.products ? order.products.name : (order.product_name || 'फसल उत्पाद')}</p>
-          <p class="text-xs text-slate-400">${qty} units @ ₹${unitPrice}/unit</p>
-        </td>
-        <td class="py-3.5 px-4">
-          <p class="text-xs text-slate-300">${order.city || 'Lucknow'}</p>
-          <p class="text-[10px] text-slate-500 truncate max-w-[140px]">${order.delivery_address || 'Home Delivery'}</p>
-        </td>
-        <td class="py-3.5 px-4">
-          <div class="text-xs">
-            <p class="font-bold text-emerald-400 text-sm">₹${totalAmount}</p>
-            <p class="text-[10px] text-slate-400">फसल: ₹${baseSubtotal} + 10% शुल्क: ₹${platformFee}</p>
-            <p class="text-[10px] text-teal-300 font-semibold">किसान आय: ₹${farmerNetEarnings}</p>
-          </div>
-        </td>
-        <td class="py-3.5 px-4">
-          <span class="status-badge status-${order.status || 'pending'} px-2 py-0.5 rounded-full text-xs font-bold uppercase">
-            ${order.status || 'pending'}
-          </span>
-        </td>
-        <td class="py-3.5 px-4 text-right">
-          <button onclick="openOrderSlipModal('${order.id}')" class="btn-slip px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm">
-            📄 View Slip & Invoice
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-// Open and Generate 10% Platform Fee Order Slip Modal
-function openOrderSlipModal(orderId) {
-  const order = currentFarmerOrders.find(o => String(o.id) === String(orderId));
-  if (!order) return;
-
-  const qty = Number(order.quantity) || 1;
-  const unitPrice = Number(order.price_per_unit) || (order.products ? order.products.price_per_unit : 0);
-  
-  // 10% PLATFORM FEE CALCULATION
-  const baseSubtotal = qty * unitPrice;
-  const platformFee = Math.round(baseSubtotal * 0.10); // 10% Fee
-  const totalAmount = Number(order.total_amount) || (baseSubtotal + platformFee);
-  const farmerEarnings = baseSubtotal;
-
-  const modalContainer = document.getElementById('order-slip-modal-container') || createModalContainer();
-
-  const cleanPhone = (order.customer_mobile || '').replace(/[^0-9]/g, '');
-  const waBillText = `*🌾 FASAL SETU - OFFICIAL ORDER SLIP & INVOICE 🌾*
-----------------------------------------
-*Order ID:* #${order.id}
-*Date:* ${new Date(order.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-*Status:* ${(order.status || 'CONFIRMED').toUpperCase()}
-
-*Customer Name:* ${order.customer_name}
-*Customer Mobile:* ${order.customer_mobile}
-*Delivery Address:* ${order.delivery_address}, ${order.city} - ${order.pincode}
-
-----------------------------------------
-*ITEM & RATE BREAKDOWN:*
-• Produce: ${order.products ? order.products.name : (order.product_name || 'Farm Fresh Produce')}
-• Quantity: ${qty} units @ ₹${unitPrice}/unit
-• Base Produce Amount: ₹${baseSubtotal}
-
-*PLATFORM CHARGES:*
-• 10% Fasal Setu Platform & Mandi Service Fee: ₹${platformFee}
-• Direct Farmer Delivery: ₹0 (FREE)
-----------------------------------------
-*TOTAL PAYABLE BY BUYER:* ₹${totalAmount}
-*FARMER NET RECEIVABLE PAYOUT:* ₹${farmerEarnings}
-----------------------------------------
-Empowering Indian Farmers through Direct Mandi Access!`;
-
-  const waLink = `https://wa.me/${cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone}?text=${encodeURIComponent(waBillText)}`;
-
-  modalContainer.innerHTML = `
-    <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" id="order-slip-backdrop">
-      <div class="relative w-full max-w-2xl rounded-3xl bg-[#11151c] border border-slate-800 shadow-2xl overflow-hidden text-slate-200 max-h-[92vh] flex flex-col">
-        
-        <!-- Header -->
-        <div class="bg-gradient-to-r from-emerald-950 via-[#11151c] to-teal-950 px-6 py-4 flex items-center justify-between border-b border-emerald-500/20">
-          <div class="flex items-center space-x-3">
-            <span class="text-2xl">🌾</span>
-            <div>
-              <h2 class="text-lg font-bold text-white">Fasal Setu Official Order Slip</h2>
-              <p class="text-xs text-emerald-400">Invoice: FS-ORD-${order.id}</p>
-            </div>
-          </div>
-          <button onclick="closeOrderSlipModal()" class="h-8 w-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center">✕</button>
-        </div>
-
-        <!-- Slip Content (Printable Area) -->
-        <div class="p-6 overflow-y-auto space-y-5" id="printable-area">
-          
-          <!-- Order Header Stamp -->
-          <div class="p-4 rounded-2xl bg-[#0c1017] border border-slate-800 flex justify-between items-center">
-            <div>
-              <h3 class="text-base font-extrabold text-white">FASAL SETU FARMER CONNECT</h3>
-              <p class="text-xs text-slate-400">Direct Producer to Consumer Portal</p>
-            </div>
-            <div class="text-right">
-              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                10% Platform Fee Included
-              </span>
-            </div>
-          </div>
-
-          <!-- Customer & Delivery -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-            <div class="p-4 rounded-2xl bg-[#0c1017] border border-slate-800">
-              <p class="font-bold text-emerald-400 mb-1">ग्राहक विवरण (Customer Details):</p>
-              <p class="font-bold text-white text-sm">${order.customer_name}</p>
-              <p class="font-mono text-slate-300 mt-1">📞 ${order.customer_mobile}</p>
-            </div>
-            <div class="p-4 rounded-2xl bg-[#0c1017] border border-slate-800">
-              <p class="font-bold text-emerald-400 mb-1">डिलीवरी पता (Delivery Address):</p>
-              <p class="text-slate-200">${order.delivery_address || 'Home Delivery'}</p>
-              <p class="font-bold text-white mt-1">${order.city || 'Lucknow'} - ${order.pincode || '226001'}</p>
-            </div>
-          </div>
-
-          <!-- Produce & 10% Fee Breakdown Table -->
-          <div class="rounded-2xl border border-slate-800 bg-[#0c1017] overflow-hidden">
-            <table class="w-full text-xs text-left">
-              <thead class="bg-slate-900 text-slate-400 font-bold border-b border-slate-800">
-                <tr>
-                  <th class="p-3">उत्पाद (Produce)</th>
-                  <th class="p-3 text-center">मात्रा (Qty)</th>
-                  <th class="p-3 text-right">दर (Rate)</th>
-                  <th class="p-3 text-right">मूल राशि (Base)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="border-b border-slate-800/80">
-                  <td class="p-3 font-bold text-white">
-                    ${order.products ? order.products.name : (order.product_name || 'Farm Fresh Produce')}
-                  </td>
-                  <td class="p-3 text-center font-bold text-white">${qty}</td>
-                  <td class="p-3 text-right font-mono text-slate-300">₹${unitPrice}</td>
-                  <td class="p-3 text-right font-mono font-bold text-white">₹${baseSubtotal}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <!-- Detailed Charge Line Items -->
-            <div class="p-4 space-y-2 text-xs border-t border-slate-800">
-              <div class="flex justify-between text-slate-300">
-                <span>फसल मूल राशि (Produce Base Total):</span>
-                <span class="font-mono font-bold">₹${baseSubtotal}</span>
-              </div>
-
-              <!-- 10% PLATFORM FEE ITEM -->
-              <div class="flex justify-between text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 font-bold">
-                <span class="flex items-center gap-1">
-                  <span>⚡</span> 10% फ़सल सेतु प्लेटफ़ॉर्म एवं सेवा शुल्क (Platform Fee):
+        <article class="product-card order-card" style="padding: 16px;">
+            <div class="product-card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span class="product-category">ORDER</span>
+                    <h3 style="margin-top:4px;">#${escapeHTML(String(order.id || "").slice(0, 8).toUpperCase())}</h3>
+                </div>
+                <span class="order-status ${getStatusClass(status)}">
+                    ${formatStatus(status)}
                 </span>
-                <span class="font-mono">+ ₹${platformFee}</span>
-              </div>
-
-              <div class="flex justify-between text-slate-400">
-                <span>फार्म डिलीवरी व हैंडलिंग (Delivery & Logistics):</span>
-                <span class="text-emerald-400 font-bold">FREE (₹0)</span>
-              </div>
-
-              <hr class="border-slate-800 my-2" />
-
-              <!-- Total Payable -->
-              <div class="flex justify-between items-center text-sm font-black bg-[#11151c] p-3 rounded-xl border border-slate-800">
-                <span class="text-white">कुल देय राशि (Total Payable Amount):</span>
-                <span class="text-xl text-emerald-400 font-mono">₹${totalAmount}</span>
-              </div>
-
-              <!-- Farmer Net Payout -->
-              <div class="flex justify-between items-center text-xs text-slate-300 px-3 py-1.5 bg-slate-900/80 rounded-lg">
-                <span>🌾 किसान शुद्ध भुगतान (Farmer Net Payout):</span>
-                <span class="font-mono font-bold text-white">₹${farmerEarnings}</span>
-              </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Actions Footer -->
-        <div class="bg-[#0c1017] px-6 py-4 border-t border-slate-800 flex justify-between items-center">
-          <div class="flex space-x-2">
-            <button onclick="window.print()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 flex items-center space-x-1.5">
-              <span>🖨️ Print Slip</span>
-            </button>
-            <a href="${waLink}" target="_blank" class="px-4 py-2 rounded-xl bg-[#25D366]/20 text-[#25D366] hover:bg-[#25D366]/30 text-xs font-bold border border-[#25D366]/40 flex items-center space-x-1.5">
-              <span>💬 WhatsApp Slip</span>
-            </a>
-          </div>
-          <button onclick="closeOrderSlipModal()" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold">
-            बंद करें (Close)
-          </button>
-        </div>
+            <div class="order-date" style="font-size:11px; color:var(--text-light); margin: 6px 0;">
+                📅 ${date}
+            </div>
 
-      </div>
-    </div>
-  `;
+            <div class="order-details" style="font-size:13px; margin: 10px 0; border-top: 1px solid var(--border); padding-top: 8px;">
+                <div><strong>Customer:</strong> ${customerName} ${customerMobile ? `(${customerMobile})` : ""}</div>
+                ${deliveryAddress ? `<div><strong>Address:</strong> 📍 ${deliveryAddress}</div>` : ""}
+            </div>
+
+            <div class="order-items" style="background:var(--green-light); padding:10px; border-radius:10px; margin: 8px 0;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span><strong>${productName}</strong> (${quantity} ${unit} × ${unitPrice})</span>
+                    <strong>${totalAmount}</strong>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:8px; border-top:1px solid var(--border);">
+                <span style="font-size:12px; color:var(--text-light);">Payment: <strong>${capitalize(paymentStatus)}</strong></span>
+                <div>
+                    ${status === "pending" ? `<button class="primary-btn" onclick="updateOrderStatus('${order.id}', 'confirmed')" style="padding:6px 12px; font-size:12px;">Accept Order ✓</button>` : ""}
+                    ${status === "confirmed" ? `<button class="primary-btn" onclick="updateOrderStatus('${order.id}', 'completed')" style="padding:6px 12px; font-size:12px;">Mark Completed 🎉</button>` : ""}
+                </div>
+            </div>
+        </article>
+    `;
 }
 
-function createModalContainer() {
-  const div = document.createElement('div');
-  div.id = 'order-slip-modal-container';
-  document.body.appendChild(div);
-  return div;
+window.updateOrderStatus = async function(orderId, newStatus) {
+    try {
+        const { error } = await supabase
+            .from("orders")
+            .update({ order_status: newStatus, status: newStatus, updated_at: new Date().toISOString() })
+            .eq("id", orderId);
+
+        if (error) throw error;
+
+        showToast(`Order status updated to ${newStatus.toUpperCase()}`);
+        await loadFarmerOrders();
+    } catch (e) {
+        console.error("Update error:", e);
+        showToast(e.message || "Failed to update order");
+    }
+};
+
+function setupOrderSearch() {
+    const input = document.getElementById("orderSearch");
+    if (input) input.addEventListener("input", applyFilters);
 }
 
-function closeOrderSlipModal() {
-  const container = document.getElementById('order-slip-modal-container');
-  if (container) container.innerHTML = '';
+function setupOrderFilter() {
+    const filter = document.getElementById("orderFilter");
+    if (filter) filter.addEventListener("change", applyFilters);
 }
 
-// Load on page ready
-document.addEventListener('DOMContentLoaded', loadFarmerOrders);
+function applyFilters() {
+    const search = document.getElementById("orderSearch")?.value?.trim().toLowerCase() || "";
+    const filterVal = document.getElementById("orderFilter")?.value?.toLowerCase() || "all";
+
+    const filtered = allOrders.filter(order => {
+        const status = String(order.order_status || order.status || "").toLowerCase();
+        const searchTarget = (String(order.id) + " " + String(order.customer_name) + " " + String(order.product?.name || "")).toLowerCase();
+        const matchesSearch = !search || searchTarget.includes(search);
+        const matchesFilter = filterVal === "all" || status === filterVal;
+        return matchesSearch && matchesFilter;
+    });
+
+    renderOrders(filtered);
+}
+
+function showEmptyOrders() {
+    const container = document.getElementById("ordersContainer");
+    const emptyState = document.getElementById("emptyOrders");
+    if (container) container.style.display = "none";
+    if (emptyState) emptyState.style.display = "block";
+}
+
+function showOrdersError(message) {
+    const emptyState = document.getElementById("emptyOrders");
+    if (emptyState) {
+        emptyState.style.display = "block";
+        emptyState.innerHTML = `
+            <div class="empty-icon">⚠️</div>
+            <h2>Unable to Load Orders</h2>
+            <p>${escapeHTML(message)}</p>
+            <button class="primary-btn" onclick="location.reload()">Try Again</button>
+        `;
+    }
+}
+
+function formatDate(dateValue) {
+    if (!dateValue) return "Recent";
+    const d = new Date(dateValue);
+    return isNaN(d.getTime()) ? "Recent" : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function capitalize(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function getStatusClass(status) {
+    switch (String(status).toLowerCase()) {
+        case "new":
+        case "pending": return "pending";
+        case "confirmed": return "confirmed";
+        case "completed":
+        case "delivered": return "completed";
+        case "cancelled": return "cancelled";
+        default: return "pending";
+    }
+}
+
+function formatStatus(status) {
+    if (!status) return "Pending";
+    return capitalize(String(status));
+}
