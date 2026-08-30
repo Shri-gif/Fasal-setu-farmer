@@ -11,7 +11,7 @@ export const calculatePlatformPrice = (
   settings?: Partial<PlatformFeeSettings> | null
 ): PlatformPriceBreakdown => {
   const basePrice = Math.max(0, Number(basePriceInput) || 0);
-  const feeValue = Math.max(0, Number(settings?.platform_fee) || 0);
+  const feeValue = Math.max(0, Number(settings?.platform_fee) || 0.10);
   const feeType = normalizeFeeType(settings?.platform_fee_type);
 
   const feeAmount = feeType === 'fixed'
