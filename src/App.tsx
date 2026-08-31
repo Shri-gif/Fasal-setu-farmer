@@ -905,6 +905,11 @@ export default function App() {
           order_status:
             newStatus,
 
+          // Keep the legacy status column in sync so the
+          // customer site and any older UI read the same state.
+          status:
+            newStatus,
+
           updated_at:
             new Date().toISOString(),
         })
